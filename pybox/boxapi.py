@@ -33,7 +33,7 @@ from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 
 from utils import encode, get_browser, get_logger, get_sha1, is_posix, \
-        map_element, parse_xml, print_unicode, stringify
+        map_element, parse_xml, stringify
 
 def is_dotfile(f):
     """Test dot file(box.com is unhappy with dot files)"""
@@ -744,44 +744,52 @@ class BoxApi(object):
         result.end_add()
         return result
  
-    def sync(self, localdir, remotedir, by_name=False, ignore=is_dotfile):
+    def sync(self, localdir, remotedir, dry_run=False, by_name=False,
+            ignore=is_dotfile):
         """Sync directories between client and server"""
+        if dry_run:
+            logger.info("dry run...")
         result = self.compare_dir(localdir, remotedir, by_name)
         client_unique_files = result.get_client_unique(True)
         for path, node in client_unique_files:
             f = os.path.join(localdir, path)
             id = node.attrib['id']
             if ignore(f):
-                print_unicode(u"ignoring file: {}".format(f))
+                logger.info(u"ignoring file: {}".format(f))
             else:
-                print_unicode(u"uploading file: {} to node {}".format(f, id))
-                self.upload(f, id, False, False)
+                logger.info(u"uploading file: {} to node {}".format(f, id))
+                if not dry_run:
+                    self.upload(f, id, False, False)
         client_unique_folders = result.get_client_unique(False)
         for path, node in client_unique_folders:
             f = os.path.join(localdir, path)
             id = node.attrib['id']
-            print_unicode(u"uploading folder: {} to node {}".format(f, id))
-            self.upload(f, id, False, False)
+            logger.info(u"uploading folder: {} to node {}".format(f, id))
+            if not dry_run:
+                self.upload(f, id, False, False)
 
         server_unique_files = result.get_server_unique(True)
         for path, node in server_unique_files:
             id = node.attrib['id']
-            print_unicode(u"removing file {} with id = {}".format(path, id))
-            self.remove(id)
+            logger.info(u"removing file {} with id = {}".format(path, id))
+            if not dry_run:
+                self.remove(id)
         server_unique_folders = result.get_server_unique(False)
         for path, node in server_unique_folders:
             id = node.attrib['id']
-            print_unicode(u"removing folder {} with id = {}".format(path, id))
-            self.rmdir(id)
+            logger.info(u"removing folder {} with id = {}".format(path, id))
+            if not dry_run:
+                self.rmdir(id)
 
         diff_files = result.get_compare(True)
         for localpath, remote_node, context_node in diff_files:
             localfile = os.path.join(localdir, localpath)
             remote_id = remote_node.attrib['id']
             remotedir_id = context_node.attrib['id']
-            print_unicode(u"uploading diff file {} with remote id = {} under {}"
+            logger.info(u"uploading diff file {} with remote id = {} under {}"
                     .format(localfile, remote_id, remotedir_id))
-            self.upload(localfile, remotedir_id, False, False)
+            if not dry_run:
+                self.upload(localfile, remotedir_id, False, False)
 
         #diff_files = result.get_compare(False)
         #for localpath, remote_node, context_node in diff_files:

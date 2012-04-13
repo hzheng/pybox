@@ -21,7 +21,7 @@ pLease take the following steps:
 (e.g. Unix, Linux, Mac OS X) or \_boxrc in a non-POSIX system(e.g. Windows).
 
 3. Edit .boxrc/\_boxrc: replace api\_key's value(YOUR\_API\_KEY) with the API key
-   you've got in step 1
+   you've got in step 1.
 
 4. Copy box-logging.conf.example to box-logging.conf.
 
@@ -34,7 +34,7 @@ pLease take the following steps:
     python pybox/boxclient.py -U YOUR\_LOGIN\_EMAIL -p -a
 
     Replace the above email with your actual login email on box.net,
-    and type your password when prompted. If login/password combination are
+    and type your password when prompted. If login/password combination is
     correct, you will get your auth token from the output(something like
     "auth\_token: XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
 
@@ -82,7 +82,7 @@ All supported options are listed as follows:
 
 * _-z, --zip_ list file tree in zip format
 
-* _-n, --nofiles_ only list directory
+* _-N, --nofiles_ only list directory
 
 * _-s, --simple_ show simple information
 
@@ -98,12 +98,14 @@ All supported options are listed as follows:
 
 * _-S, --sync_ sync local and remote directories
 
+* _-n, --dry-run_ show what would have been transferred when sync
+
 * _-f, --from-file_ read arguments from file(arguments separated by line break)
 
 EXAMPLES
 --------
 
-Assume all the following operations are on Bob's account.
+Assume all the following operations are performed on Bob's account.
 
 * show account information:
 
@@ -145,7 +147,7 @@ Assume all the following operations are on Bob's account.
 
         python pybox/boxclient.py -Ubob -R 1005181453
 
-* remove a directory whose path is 'path1/path2'(starting from root)
+* remove a directory whose path is `path1/path2`(starting from root)
 
         python pybox/boxclient.py -Ubob -PR -td path1/path2
 
@@ -174,7 +176,7 @@ Assume all the following operations are on Bob's account.
 
         python pybox/boxclient.py -Ubob -td -PC /Users/bob/dir1 dir2/dir3
 
-* sync a local directory(source) `/Users/bob/dir1` with a remote directory
+* sync a local directory `/Users/bob/dir1`(source) with a remote directory
   `dir2/dir3`(destination)
 
         python pybox/boxclient.py -Ubob -PS /Users/bob/dir1 dir2/dir3

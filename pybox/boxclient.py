@@ -52,7 +52,7 @@ def main(argv=None):
                         help="list one level files")
     parser.add_option("-z", "--zip", action="store_true", dest="zip",
                         help="list file tree in zip format")
-    parser.add_option("-n", "--nofiles", action="store_true", dest="nofiles",
+    parser.add_option("-N", "--nofiles", action="store_true", dest="nofiles",
                         help="only list directory")
     parser.add_option("-s", "--simple", action="store_true", dest="simple",
                         help="simple info")
@@ -68,6 +68,8 @@ def main(argv=None):
                         help="compare local and remote directories")
     parser.add_option("-S", "--sync", action="store_true", dest="sync",
                         help="sync local and remote files or directories")
+    parser.add_option("-n", "--dry-run", action="store_true", dest="dry_run",
+                        help="show what would have been transferred when sync")
     parser.add_option("-f", "--from-file", dest="from_file",
                         help="read arguments(separated by line break) from file")
     (options, args) = parser.parse_args(argv)
@@ -164,6 +166,7 @@ def main(argv=None):
         action = 'sync'
         # pair the arguments
         args = zip(args[::2], args[1::2])
+        extra_args.append(options.dry_run)
     else:
         parser.error("too few options")
     extra_args.append(options.plain)
