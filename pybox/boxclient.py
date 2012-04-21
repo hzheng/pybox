@@ -10,74 +10,76 @@ __copyright__ = "Copyright 2011-2012 Hui Zheng"
 __credits__ = ["Hui Zheng"]
 __license__ = "MIT <http://www.opensource.org/licenses/mit-license.php>"
 __version__ = "0.1"
-__maintainer__ = "Hui Zheng"
 __email__ = "xyzdll[AT]gmail[DOT]com"
-__status__ = "Development"
 
 import sys
 import getpass
 from optparse import OptionParser
 
-from boxapi import BoxApi, logger
-from utils import decode_args, print_unicode, stringify
+from pybox.boxapi import BoxApi, logger
+from pybox.utils import decode_args, print_unicode, stringify
 
-def main(argv=None):
+
+def parse_args(argv):
     usage = "usage: %prog [options] [args]"
     parser = OptionParser(usage)
     parser.add_option("-U", "--username", dest="username",
-                        help="username(email)")
+            help="username(email)")
     parser.add_option("-p", "--password", action="store_true", dest="password",
-                        help="prompt password")
-    parser.add_option("-a", "--auth-token", action="store_true", dest="auth_token",
-                        help="print auth token")
-    parser.add_option("-I", "--account-info", action="store_true", dest="account_info",
-                        help="get account info")
+            help="prompt password")
+    parser.add_option("-a", "--auth-token", action="store_true",
+            dest="auth_token", help="print auth token")
+    parser.add_option("-I", "--account-info", action="store_true",
+            dest="account_info", help="get account info")
     parser.add_option("-t", "--target", dest="target",
-                        help="target(f for file<default>, d for directory)")
+            help="target(f for file<default>, d for directory)")
     parser.add_option("-l", "--list", action="store_true", dest="list",
-                        help="list directory")
+            help="list directory")
     parser.add_option("-w", "--what-id", dest="what_id",
-                        help="get a path(server-side)'s id")
+            help="get a path(server-side)'s id")
     parser.add_option("-i", "--info", action="store_true", dest="info",
-                        help="get file info")
+            help="get file info")
     parser.add_option("-M", "--mkdir", action="store_true", dest="mkdir",
-                        help="make a directory")
+            help="make a directory")
     parser.add_option("-R", "--remove", action="store_true", dest="remove",
-                        help="remove a file or directory")
+            help="remove a file or directory")
     parser.add_option("-m", "--move", action="store_true", dest="move",
-                        help="move a file or directory")
+            help="move a file or directory")
     parser.add_option("-r", "--rename", action="store_true", dest="rename",
-                        help="rename a file or directory")
+            help="rename a file or directory")
     parser.add_option("-1", "--onelevel", action="store_true", dest="onelevel",
-                        help="list one level files")
+            help="list one level files")
     parser.add_option("-z", "--zip", action="store_true", dest="zip",
-                        help="list file tree in zip format")
+            help="list file tree in zip format")
     parser.add_option("-N", "--nofiles", action="store_true", dest="nofiles",
-                        help="only list directory")
+            help="only list directory")
     parser.add_option("-s", "--simple", action="store_true", dest="simple",
-                        help="simple info")
+            help="simple info")
     parser.add_option("-c", "--chdir", dest="chdir",
-                        help="change directory")
+            help="change directory")
     parser.add_option("-d", "--download", action="store_true", dest="download",
-                        help="download file")
+            help="download file")
     parser.add_option("-u", "--upload", action="store_true", dest="upload",
-                        help="upload file")
+            help="upload file")
     parser.add_option("-P", "--plain-name", action="store_true", dest="plain",
-                        help="use plain name instead of id")
+            help="use plain name instead of id")
     parser.add_option("-C", "--compare", action="store_true", dest="compare",
-                        help="compare local and remote directories")
+            help="compare local and remote directories")
     parser.add_option("-S", "--sync", action="store_true", dest="sync",
-                        help="sync local and remote files or directories")
+            help="sync local and remote files or directories")
     parser.add_option("-n", "--dry-run", action="store_true", dest="dry_run",
-                        help="show what would have been transferred when sync")
+            help="show what would have been transferred when sync")
     parser.add_option("-f", "--from-file", dest="from_file",
-                        help="read arguments(separated by line break) from file")
+            help="read arguments(separated by line break) from file")
     (options, args) = parser.parse_args(argv)
     if options.from_file:
         with open(options.from_file) as f:
             args = [arg.strip() for arg in f.readlines()]
-    args = decode_args(args, options)
+    return (parser, options, decode_args(args, options))
 
+
+def main(argv=None):
+    (parser, options, args) = parse_args(argv)
     username = options.username
     if not username:
         username = raw_input("username/email: ").strip()
@@ -98,19 +100,19 @@ def main(argv=None):
     target = options.target
     what_id = options.what_id
     if what_id:
-        if target == 'd': 
+        if target == 'd':
             target_type = False
         elif target == 'f':
             target_type = True
         else:
             target_type = None
-        id, is_file = client.get_file_id(what_id, target_type)
-        if not id:
+        id_, is_file = client.get_file_id(what_id, target_type)
+        if not id_:
             print_unicode(u"no id found for {}(type: {})".format(
                     what_id, "unspecified" if target is None else target))
         else:
             print_unicode(u"{} {}'s id is {}".format(
-                    "file" if is_file else "folder", what_id, id))
+                    "file" if is_file else "folder", what_id, id_))
         return 0
 
     if len(args) == 0:
@@ -196,4 +198,3 @@ def main(argv=None):
 
 if __name__ == '__main__':
     sys.exit(main())
-

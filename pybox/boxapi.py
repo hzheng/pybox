@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 """
@@ -10,30 +9,28 @@ __copyright__ = "Copyright 2011-2012 Hui Zheng"
 __credits__ = ["Hui Zheng"]
 __license__ = "MIT <http://www.opensource.org/licenses/mit-license.php>"
 __version__ = "0.1"
-__maintainer__ = "Hui Zheng"
 __email__ = "xyzdll[AT]gmail[DOT]com"
-__status__ = "Development"
 
 import base64
 import ConfigParser
-from ConfigParser import NoSectionError
 import errno
 import os
 import re
 import urllib
 import urllib2
 from zipfile import ZipFile
-try: 
+try:
     from cStringIO import StringIO
-except ImportError: 
+except ImportError:
     from StringIO import StringIO
 
 import httplib2
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
 
-from utils import encode, get_browser, get_logger, get_sha1, is_posix, \
+from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
         map_element, parse_xml, stringify
+
 
 def is_dotfile(f):
     """Test dot file(box.com is unhappy with dot files)"""
@@ -41,23 +38,23 @@ def is_dotfile(f):
 
 logger = get_logger('box', "box-logging.conf")
 
-def log_response(response):
-    """Log response"""
-    logger.debug("response: {}".format(stringify(response)))
 
 class ConfigError(Exception):
     """Configuration error"""
     pass
 
+
 class StatusError(Exception):
     """Status error"""
     pass
 
+
 class DiffResult(object):
     """Wrap diff results"""
-    
-    class DiffResultItem(object):
+
+    class _DiffResultItem(object):
         """Diff result for a context directory"""
+
         def __init__(self, container, context_node, ignore_common=True):
             self.container = container
             self.context_node = context_node
@@ -70,54 +67,58 @@ class DiffResult(object):
             return self._client_uniques[0 if is_file else 1]
 
         def add_client_unique(self, is_file, path):
-            self.get_client_unique(is_file).append(path[self.container._local_prelen:])
+            self.get_client_unique(is_file).append(
+                    path[self.container.local_prelen:])
 
         def get_server_unique(self, is_file):
             return self._server_uniques[0 if is_file else 1]
 
-        def add_server_unique(self, is_file, map):
+        def add_server_unique(self, is_file, mapping):
             uniques = self.get_server_unique(is_file)
-            for name, node in map.iteritems():
+            for name, node in mapping.iteritems():
                 context = "/".join(self.container.context)
-                uniques.append(((context + "/" + name)[self.container._remote_prelen:], node))
+                path = (context + "/" + name)[self.container.remote_prelen:]
+                uniques.append((path, node))
 
         def get_compare(self, is_diff):
             return self._compares[0 if is_diff else 1]
- 
+
         def add_compare(self, is_diff, localpath, remotenode):
             if is_diff or not self._ignore_common:
-                self.get_compare(is_diff).append((localpath[self.container._local_prelen:], remotenode))
- 
+                self.get_compare(is_diff).append(
+                        (localpath[self.container.local_prelen:], remotenode))
+
     def __init__(self, localdir, remotedir, ignore_common=True):
         self.localdir = localdir
-        self._local_prelen = len(localdir) + 1
+        self.local_prelen = len(localdir) + 1
         self.remotedir = remotedir
         self.remotename = remotedir.attrib['name']
-        self._remote_prelen = len(self.remotename) + 1
+        self.remote_prelen = len(self.remotename) + 1
         self.items = []
         self.context = []
         self._ignore_common = ignore_common
 
     def start_add(self, context_node):
-        item = DiffResult.DiffResultItem(self, context_node, self._ignore_common)
+        item = DiffResult._DiffResultItem(
+                self, context_node, self._ignore_common)
         self.context.append(context_node.attrib['name'])
         self.items.append(item)
         return item
 
     def end_add(self):
         self.context.pop()
- 
+
     def get_client_unique(self, is_file):
         for item in self.items:
             for path in item.get_client_unique(is_file):
                 yield (path, item.context_node)
- 
+
     def get_server_unique(self, is_file):
         for item in self.items:
             #yield iter(item.get_server_unique(is_file)).next()
             for i in item.get_server_unique(is_file):
                 yield i
- 
+
     def get_compare(self, is_file):
         for item in self.items:
             for localpath, remotenode in item.get_compare(is_file):
@@ -128,11 +129,11 @@ class DiffResult(object):
         for item in self.items:
             result[0].extend(item.get_client_unique(True))
             result[1].extend(item.get_client_unique(False))
-            result[2].extend([l for l, r in item.get_server_unique(True)])
-            result[3].extend([l for l, r in item.get_server_unique(False)])
-            result[4].extend([l for l, r in item.get_compare(True)])
+            result[2].extend([l for l, _ in item.get_server_unique(True)])
+            result[3].extend([l for l, _ in item.get_server_unique(False)])
+            result[4].extend([l for l, _ in item.get_compare(True)])
             if not self._ignore_common:
-                result[5].extend([l for l, r in item.get_compare(False)])
+                result[5].extend([l for l, _ in item.get_compare(False)])
         return result
 
     def __unicode__(self):
@@ -157,6 +158,7 @@ class DiffResult(object):
     def __str__(self):
         return encode(unicode(self))
 
+
 class BoxApi(object):
     """Box API"""
     BOX_URL = "box.com/api/1.0/"
@@ -176,9 +178,11 @@ class BoxApi(object):
     FILENAME_PATTERN = re.compile('(.*filename=")(.+)(".*)')
 
     def __init__(self):
-        conf_file = os.path.expanduser("~/.boxrc" if is_posix() else "~/_boxrc")
+        conf_file = os.path.expanduser(
+                "~/.boxrc" if is_posix() else "~/_boxrc")
         if not os.path.exists(conf_file):
-            raise ConfigError("Configuration file {} not found".format(conf_file))
+            raise ConfigError(
+                    "Configuration file {} not found".format(conf_file))
 
         try:
             conf_parser = ConfigParser.ConfigParser()
@@ -186,13 +190,19 @@ class BoxApi(object):
             self._conf_parser = conf_parser
             self._api_key = conf_parser.get("app", "api_key")
         except ConfigParser.NoSectionError as e:
-            raise ConfigError("{} (in configuration file {})".format(e, conf_file))
+            raise ConfigError("{} (in configuration file {})"
+                    .format(e, conf_file))
 
         self._ticket = None
         self._auth_token = None
- 
-    @classmethod
-    def _parse_response(cls, response):
+
+    @staticmethod
+    def _log_response(response):
+        """Log response"""
+        logger.debug("response: {}".format(stringify(response)))
+
+    @staticmethod
+    def _parse_response(response):
         try:
             tree = parse_xml(response)
             status = tree.findtext("status")
@@ -224,8 +234,7 @@ class BoxApi(object):
         if not self._ticket:
             params = urllib.urlencode({
                        'action': "get_ticket",
-                       'api_key': self._api_key
-                       })
+                       'api_key': self._api_key})
             logger.debug("get_ticket params: {}".format(params))
             response = urllib.urlopen(self.REST_URL, params)
             tree = self._parse_response(response)
@@ -240,16 +249,16 @@ class BoxApi(object):
         browser = get_browser(True)
         response = browser.open(url)
         request_token = self._get_request_token(response.read())
- 
+
         browser.select_form(name='login_form1')
         browser['login'] = login
         browser['password'] = password
 
         # add an field which is supposed to be added by javascript
-        browser.form.new_control('text', 'request_token',{'value':''})
+        browser.form.new_control('text', 'request_token', {'value': ''})
         browser.form.fixup()
         browser['request_token'] = request_token
-        
+
         response = browser.submit()
         if not browser.viewing_html():
             raise StatusError("something is wrong when browsing HTML")
@@ -265,10 +274,12 @@ class BoxApi(object):
         body = {
                 'login': login, 'password': password,
                 'request_token': request_token,
-                'dologin': "1", # important 
+                'dologin': "1", # important
                }
-        headers['Cookie'] = response['set-cookie'] + "; is_human=true" # important
-        response, content = http.request(url, 'POST', headers=headers, body=urllib.urlencode(body))
+        # setting "is_human" is important
+        headers['Cookie'] = response['set-cookie'] + "; is_human=true"
+        response, content = http.request(
+                url, 'POST', headers=headers, body=urllib.urlencode(body))
         logger.debug("response 2: {}".format(response))
 
     def authorize(self, login, password):
@@ -285,22 +296,24 @@ class BoxApi(object):
         getattr(self, "_automate" + arg)(url, login, password)
 
     def get_auth_token(self, login, password=None):
-        """Get an auth token. 
+        """Get an auth token.
         This method MUST be called before any account-relative action.
 
         If auth token has not been set before, read from configuration file.
         If not found, initiate authorization.
-        Refer: http://developers.box.net/w/page/12923930/ApiFunction_get_auth_token
+        Refer:
+        http://developers.box.net/w/page/12923930/ApiFunction_get_auth_token
         """
         if self._auth_token:
             return self._auth_token
 
         try:
-            auth_token = self._conf_parser.get("account-" + login, "auth_token")
+            auth_token = self._conf_parser.get(
+                    "account-" + login, "auth_token")
             if auth_token:
                 self._auth_token = auth_token
                 return auth_token
-        except NoSectionError:
+        except ConfigParser.NoSectionError:
             logger.warn("no account set for {}".format(login))
         else:
             logger.warn("empty auth_token")
@@ -312,14 +325,13 @@ class BoxApi(object):
         params = urllib.urlencode({
                    'action': "get_auth_token",
                    'api_key': self._api_key,
-                   'ticket': self._ticket
-                   })
+                   'ticket': self._ticket})
         logger.debug("get_auth_token params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
         tree = self._parse_response(response)
         self._auth_token = tree.findtext('auth_token')
         return self._auth_token
- 
+
     def get_account_info(self):
         """Get account information"""
         self._check()
@@ -327,13 +339,12 @@ class BoxApi(object):
         params = urllib.urlencode({
                    'action': "get_account_info",
                    'api_key': self._api_key,
-                   'auth_token': self._auth_token
-                   })
+                   'auth_token': self._auth_token})
         logger.debug("get_account_info params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
         tree = self._parse_response(response)
         info = map_element(tree.find('user'))
-        log_response(info)
+        self._log_response(info)
         return info
 
     @staticmethod
@@ -341,8 +352,8 @@ class BoxApi(object):
         unzipped = base64.b64decode(zipped)
         sio = StringIO()
         sio.write(unzipped)
-        zf = ZipFile(sio)
-        stream = zf.open(zf.namelist()[0])
+        zipfile = ZipFile(sio)
+        stream = zipfile.open(zipfile.namelist()[0])
         return parse_xml(stream)
 
     def list(self, folder_id=None, extra_params=None, by_name=False):
@@ -359,8 +370,7 @@ class BoxApi(object):
                    'action': "get_account_tree",
                    'api_key': self._api_key,
                    'auth_token': self._auth_token,
-                   'folder_id': encode(folder_id)
-                   })
+                   'folder_id': encode(folder_id)})
         params += "&"
         extra_param_list = [('params[]', param) for param in extra_params]
         params += urllib.urlencode(extra_param_list)
@@ -372,20 +382,21 @@ class BoxApi(object):
         else:
             zipped = tree.findtext("tree")
             folder = self._unzip_node(zipped)
-        log_response(folder)
+        self._log_response(folder)
         return folder
 
-    def _get_file_id(self, files, name, is_file):
+    @staticmethod
+    def _get_file_id(files, name, is_file):
         if is_file:
-            type = "file"
+            type_ = "file"
             attr_name = "file_name"
             files = files.find('files')
         else:
-            type = "folder"
+            type_ = "folder"
             attr_name = "name"
             files = files.find('folders')
-        logger.debug(u"checking {} {}".format(type, name))
-        for f in (files and files.findall(type) or []):
+        logger.debug(u"checking {} {}".format(type_, name))
+        for f in (files and files.findall(type_) or []):
             if f.attrib[attr_name] == name:
                 f_id = f.attrib['id']
                 logger.debug(u"found name '{}' with id {}".format(name, f_id))
@@ -398,7 +409,8 @@ class BoxApi(object):
         if is_file is None, check both file and folder type.
         Return id and type(whether file or not).
         """
-        if not path or path == "/": return self.ROOT_ID, False
+        if not path or path == "/":
+            return self.ROOT_ID, False
 
         path = os.path.normpath(path)
         paths = [p for p in path.split(os.sep) if p]
@@ -416,12 +428,13 @@ class BoxApi(object):
         logger.debug(u"checking name: {}".format(name))
         files = self.list(folder_id)
         if not is_file:
-            id = self._get_file_id(files, name, False)
-            if id: return id, False
+            id_ = self._get_file_id(files, name, False)
+            if id_:
+                return id_, False
 
         if is_file is None or is_file:
             return self._get_file_id(files, name, True), True
-                
+
         return None, None
 
     def _convert_to_id(self, name, is_file):
@@ -441,13 +454,12 @@ class BoxApi(object):
                    'action': "get_file_info",
                    'api_key': self._api_key,
                    'auth_token': self._auth_token,
-                   'file_id': encode(file_id)
-                   })
+                   'file_id': encode(file_id)})
         logger.debug("get_file_info params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
         tree = self._parse_response(response)
         info = map_element(tree.find('info'))
-        log_response(info)
+        self._log_response(info)
         return info
 
     def mkdir(self, name, parent=None, by_name=False, share=0):
@@ -463,73 +475,70 @@ class BoxApi(object):
                    'action': "create_folder",
                    'api_key': self._api_key,
                    'auth_token': self._auth_token,
-                   'parent_id': encode(parent), 
+                   'parent_id': encode(parent),
                    'name': encode(name),
-                   'share': share
-                   })
+                   'share': share})
         logger.debug("mkdir params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
 
         tree = self._parse_response(response)
         folder = map_element(tree.find('folder'))
-        log_response(folder)
+        self._log_response(folder)
         return folder
 
-    def rmdir(self, id, by_name=False):
+    def rmdir(self, id_, by_name=False):
         """Remove the given directory"""
-        self._remove(False, id, by_name)
+        self._remove(False, id_, by_name)
 
-    def remove(self, id, by_name=False):
+    def remove(self, id_, by_name=False):
         """Remove the given file"""
-        self._remove(True, id, by_name)
+        self._remove(True, id_, by_name)
 
-    def _remove(self, is_file, id, by_name):
+    def _remove(self, is_file, id_, by_name):
         self._check()
 
         if by_name:
-            id = self._convert_to_id(id, is_file)
+            id_ = self._convert_to_id(id_, is_file)
         params = urllib.urlencode({
                    'action': "delete",
                    'api_key': self._api_key,
                    'auth_token': self._auth_token,
-                   'target': "file" if is_file else "folder", 
-                   'target_id': encode(id)
-                   })
+                   'target': "file" if is_file else "folder",
+                   'target_id': encode(id_)})
         logger.debug("delete params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
         tree = self._parse_response(response)
-        log_response(tree)
- 
-    def rename_file(self, id, new_name, by_name=False):
-        """Rename a file"""
-        self._rename(True, id, new_name, by_name)
- 
-    def rename_dir(self, id, new_name, by_name=False):
-        """Rename a directory"""
-        self._rename(False, id, new_name, by_name)
+        self._log_response(tree)
 
-    def _rename(self, is_file, id, new_name, by_name):
+    def rename_file(self, id_, new_name, by_name=False):
+        """Rename a file"""
+        self._rename(True, id_, new_name, by_name)
+
+    def rename_dir(self, id_, new_name, by_name=False):
+        """Rename a directory"""
+        self._rename(False, id_, new_name, by_name)
+
+    def _rename(self, is_file, id_, new_name, by_name):
         self._check()
 
         if by_name:
-            id = self._convert_to_id(id, is_file)
+            id_ = self._convert_to_id(id_, is_file)
         params = urllib.urlencode({
                    'action': "rename",
                    'api_key': self._api_key,
                    'auth_token': self._auth_token,
-                   'target': "file" if is_file else "folder", 
-                   'target_id': encode(id),
-                   'new_name': encode(new_name)
-                   })
+                   'target': "file" if is_file else "folder",
+                   'target_id': encode(id_),
+                   'new_name': encode(new_name)})
         logger.debug("rename params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
         tree = self._parse_response(response)
-        log_response(tree)
- 
-    def move_file(self, file, new_folder, by_name=False):
+        self._log_response(tree)
+
+    def move_file(self, file_, new_folder, by_name=False):
         """Move a file to another folder"""
-        self._move(True, file, new_folder, by_name)
- 
+        self._move(True, file_, new_folder, by_name)
+
     def move_dir(self, folder, new_folder, by_name=False):
         """Move a directory to another folder"""
         self._move(False, folder, new_folder, by_name)
@@ -544,14 +553,13 @@ class BoxApi(object):
                    'action': "move",
                    'api_key': self._api_key,
                    'auth_token': self._auth_token,
-                   'target': "file" if is_file else "folder", 
+                   'target': "file" if is_file else "folder",
                    'target_id': encode(target),
-                   'destination_id': encode(new_folder)
-                   })
+                   'destination_id': encode(new_folder)})
         logger.debug("move params: {}".format(params))
         response = urllib.urlopen(self.REST_URL, params)
         tree = self._parse_response(response)
-        log_response(tree)
+        self._log_response(tree)
 
     def download_dir(self, folder_id, localdir=None, by_name=False):
         """Download the directory with the given id to a local directory"""
@@ -568,14 +576,14 @@ class BoxApi(object):
         except OSError as e:
             if e.errno != errno.EEXIST:
                 raise
-        
+
         files = tree.find('files')
         for f in (files and files.findall('file') or []):
             file_name = f.attrib['file_name']
             file_id = f.attrib['id']
             localfile = os.path.join(localdir, file_name)
             if os.path.exists(localfile):
-                # check 
+                # check
                 sha1 = f.attrib['sha1']
                 if get_sha1(localfile) == sha1:
                     logger.debug("same sha1")
@@ -624,7 +632,7 @@ class BoxApi(object):
             self._upload_dir(uploaded, parent, precheck)
         else:
             logger.debug("ignore to upload {}".format(uploaded))
- 
+
     def _upload_dir(self, upload_dir, parent, precheck):
         # create a directory in box.net, it's ok if it already exists
         newdir = self.mkdir(os.path.basename(upload_dir), parent)
@@ -666,13 +674,15 @@ class BoxApi(object):
         upload_file = encode(upload_file)
         datagen, headers = multipart_encode({'file': open(upload_file)})
 
-        class DataWrapper:
+        class DataWrapper(object):
             """Fix filename encoding problem"""
+
             def __init__(self, filename, datagen, headers):
                 data = datagen.next()
                 length = int(headers['Content-Length']) - len(data)
                 filename = os.path.basename(filename)
-                data = BoxApi.FILENAME_PATTERN.sub("\g<1>" + filename + "\\3", data)
+                data = BoxApi.FILENAME_PATTERN.sub(
+                        "\g<1>" + filename + "\\3", data)
                 headers['Content-Length'] = str(length + len(data))
                 self.datagen = datagen
                 self.header_data = data
@@ -692,7 +702,7 @@ class BoxApi(object):
         request = urllib2.Request(url, datagen, headers)
         response = urllib2.urlopen(request)
         tree = self._parse_response(response)
-        log_response(tree)
+        self._log_response(tree)
 
     def compare_file(self, localfile, remotefile, by_name=False):
         """Compare files between server and client"""
@@ -700,7 +710,8 @@ class BoxApi(object):
         info = self.get_file_info(remotefile, by_name)
         return sha1 == info['sha1']
 
-    def compare_dir(self, localdir, remotedir, by_name=False, ignore_common=True):
+    def compare_dir(self, localdir, remotedir,
+            by_name=False, ignore_common=True):
         """Compare directories between server and client"""
         tree = self.list(remotedir, [self.SIMPLE], by_name)
         localdir = os.path.normpath(localdir)
@@ -743,7 +754,7 @@ class BoxApi(object):
             self._compare_dir(path, subtree, result)
         result.end_add()
         return result
- 
+
     def sync(self, localdir, remotedir, dry_run=False, by_name=False,
             ignore=is_dotfile):
         """Sync directories between client and server"""
@@ -753,33 +764,33 @@ class BoxApi(object):
         client_unique_files = result.get_client_unique(True)
         for path, node in client_unique_files:
             f = os.path.join(localdir, path)
-            id = node.attrib['id']
+            id_ = node.attrib['id']
             if ignore(f):
                 logger.info(u"ignoring file: {}".format(f))
             else:
-                logger.info(u"uploading file: {} to node {}".format(f, id))
+                logger.info(u"uploading file: {} to node {}".format(f, id_))
                 if not dry_run:
-                    self.upload(f, id, False, False)
+                    self.upload(f, id_, False, False)
         client_unique_folders = result.get_client_unique(False)
         for path, node in client_unique_folders:
             f = os.path.join(localdir, path)
-            id = node.attrib['id']
-            logger.info(u"uploading folder: {} to node {}".format(f, id))
+            id_ = node.attrib['id']
+            logger.info(u"uploading folder: {} to node {}".format(f, id_))
             if not dry_run:
-                self.upload(f, id, False, False)
+                self.upload(f, id_, False, False)
 
         server_unique_files = result.get_server_unique(True)
         for path, node in server_unique_files:
-            id = node.attrib['id']
-            logger.info(u"removing file {} with id = {}".format(path, id))
+            id_ = node.attrib['id']
+            logger.info(u"removing file {} with id = {}".format(path, id_))
             if not dry_run:
-                self.remove(id)
+                self.remove(id_)
         server_unique_folders = result.get_server_unique(False)
         for path, node in server_unique_folders:
-            id = node.attrib['id']
-            logger.info(u"removing folder {} with id = {}".format(path, id))
+            id_ = node.attrib['id']
+            logger.info(u"removing folder {} with id = {}".format(path, id_))
             if not dry_run:
-                self.rmdir(id)
+                self.rmdir(id_)
 
         diff_files = result.get_compare(True)
         for localpath, remote_node, context_node in diff_files:
@@ -798,4 +809,3 @@ class BoxApi(object):
             #remotedir_id = context_node.attrib['id']
             #print u"same file {} with remote id = {} under {}".format(
                     #localfile, remote_id, remotedir_id)
-
