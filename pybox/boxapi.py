@@ -36,7 +36,7 @@ def is_dotfile(f):
     """Test dot file(box.com is unhappy with dot files)"""
     return os.path.basename(f)[0] == '.'
 
-logger = get_logger('box', "box-logging.conf")
+logger = get_logger()
 
 
 class ConfigError(Exception):

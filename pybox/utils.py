@@ -14,6 +14,7 @@ __email__ = "xyzdll[AT]gmail[DOT]com"
 import os
 import sys
 
+import ConfigParser
 import cookielib
 import hashlib
 import logging
@@ -26,6 +27,10 @@ except ImportError:
     import xml.etree.ElementTree as etree
 
 ENCODING = sys.stdin.encoding # typically "UTF-8"
+
+LOGGER_CONF_FILE = os.path.join(
+        os.getenv('LOG_CONF_DIR') or ".", "box-logging.conf")
+LOGGER_NAME = "box"
 
 
 def is_posix():
@@ -50,22 +55,19 @@ def print_unicode(unicode_str):
     print encode(unicode_str)
 
 
-def get_logger(name, conf_name="logging.conf"):
+def get_logger():
     """Return a logger with the given name from the given configuration file"""
-    env_var = "LOG_CONF_DIR"
-    log_dir = os.getenv(env_var) or "."
-    log_path = os.path.join(log_dir, conf_name)
-    if not os.path.exists(log_path):
+    if not os.path.exists(LOGGER_CONF_FILE):
         sys.stderr.write("log configuration file {} does NOT exist\n"
-                .format(log_path))
-        exit(1)
+                .format(LOGGER_CONF_FILE))
+        sys.exit(1)
 
     try:
-        logging.config.fileConfig(log_path)
-        return logging.getLogger(name)
-    except IOError as e:
-        sys.stderr.write("exception: {}\n".format(e))
-        exit(1)
+        logging.config.fileConfig(LOGGER_CONF_FILE)
+        return logging.getLogger(LOGGER_NAME)
+    except ConfigParser.Error as e:
+        sys.stderr.write("logger configuration error - {}\n".format(e))
+        sys.exit(1)
 
 
 def parse_xml(source):

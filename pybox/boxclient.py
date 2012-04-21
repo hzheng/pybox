@@ -16,8 +16,10 @@ import sys
 import getpass
 from optparse import OptionParser
 
-from pybox.boxapi import BoxApi, logger
-from pybox.utils import decode_args, print_unicode, stringify
+from pybox.boxapi import BoxApi, ConfigError, StatusError
+from pybox.utils import decode_args, get_logger, print_unicode, stringify
+
+logger = get_logger()
 
 
 def parse_args(argv):
@@ -78,28 +80,33 @@ def parse_args(argv):
     return (parser, options, decode_args(args, options))
 
 
-def main(argv=None):
-    (parser, options, args) = parse_args(argv)
+def init_client(options):
     username = options.username
     if not username:
         username = raw_input("username/email: ").strip()
     password = getpass.getpass("password: ") if options.password else None
 
-    client = BoxApi()
-    auth_token = client.get_auth_token(username, password)
+    try:
+        client = BoxApi()
+        auth_token = client.get_auth_token(username, password)
+    except ConfigError as e:
+        sys.stderr.write("box configuration error - {}\n".format(e))
+        sys.exit(1)
+    except (StatusError, AssertionError) as e:
+        sys.stderr.write("{}\n".format(e))
+        sys.exit(1)
 
     if options.auth_token:
         print_unicode(u"auth_token: {}".format(auth_token))
-        return 0
+        sys.exit()
 
     if options.account_info:
         print_unicode(u"account_info: {}".format(client.get_account_info()))
-        return 0
+        sys.exit()
 
-    # main operations
-    target = options.target
     what_id = options.what_id
     if what_id:
+        target = options.target
         if target == 'd':
             target_type = False
         elif target == 'f':
@@ -113,11 +120,13 @@ def main(argv=None):
         else:
             print_unicode(u"{} {}'s id is {}".format(
                     "file" if is_file else "folder", what_id, id_))
-        return 0
+        sys.exit()
 
-    if len(args) == 0:
-        parser.error("no arguments for the given option(s)")
+    return client
 
+
+def get_action(client, parser, options, args):
+    target = options.target
     extra_args = []
     if options.rename:
         if len(args) % 2:
@@ -173,9 +182,24 @@ def main(argv=None):
         parser.error("too few options")
     extra_args.append(options.plain)
 
+    return (action, args, extra_args)
+
+
+def main(argv=None):
+    # parse the command line
+    (parser, options, args) = parse_args(argv)
+
+    # initialize client(may exit early for those no-arg commands)
+    client = init_client(options)
+
+    # prepare operations
+    if len(args) == 0:
+        parser.error("no arguments for the given option")
+    action, args, extra_args = get_action(client, parser, options, args)
+
+    # begin operations
     operate = getattr(client, action)
     errors = 0
-
     for arg in args:
         try:
             if isinstance(arg, basestring):
