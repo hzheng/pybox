@@ -37,12 +37,16 @@ def is_posix():
     return os.name == 'posix'
 
 
-def get_sha1(file_obj):
+def get_sha1(file_obj, blocksize=65536):
     """Get SHA1 for a file"""
-    with open(file_obj) as f:
-        sha = hashlib.sha1()
-        sha.update(f.read())
-        return sha.hexdigest()
+    sha = hashlib.sha1()
+    with open(file_obj, 'rb') as f:
+        while True:
+            buf = f.read(blocksize)
+            if len(buf) <= 0:
+                break
+            sha.update(buf)
+    return sha.hexdigest()
 
 
 def encode(unicode_str):

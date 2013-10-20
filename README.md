@@ -7,7 +7,7 @@ INTRODUCTION
 `pybox` is a Python API/client that manipulates files on box.com
 (a.k.a box.net). It can display user's account information, file structure,
 and file information, manage(move/rename/delete/upload/download) files and
-directories, and **most importantly**, it can compare and synchronize
+directories, and **most importantly**, it can recursively compare and synchronize
 directories between client and server.
 
 USAGE
