@@ -37,15 +37,15 @@ def is_posix():
     return os.name == 'posix'
 
 
-def get_sha1(file_obj, blocksize=65536):
+def get_sha1(file_obj, block_size=65536):
     """Get SHA1 for a file"""
     sha = hashlib.sha1()
     with open(file_obj, 'rb') as f:
         while True:
-            buf = f.read(blocksize)
-            if len(buf) <= 0:
+            buffer = f.read(block_size)
+            if not buffer:
                 break
-            sha.update(buf)
+            sha.update(buffer)
     return sha.hexdigest()
 
 

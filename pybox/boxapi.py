@@ -596,7 +596,8 @@ class BoxApi(object):
             folder_id = f.attrib['id']
             self.download_dir(folder_id, localdir)
 
-    def download_file(self, file_id, localdir=None, by_name=False):
+    def download_file(self, file_id, localdir=None, by_name=False,
+            block_size=65536):
         """Download the file with the given id to a local directory"""
         self._check()
 
@@ -604,18 +605,23 @@ class BoxApi(object):
             file_id = self._convert_to_id(file_id, True)
         url = self.DOWNLOAD_URL.format(self._auth_token, encode(file_id))
         logger.debug("download url: {}".format(url))
-        http = httplib2.Http()
-        response, content = http.request(url, 'GET')
-        logger.debug("response: {}".format(response))
-        status = response.status
+        stream = urllib2.urlopen(url)
+        status = stream.getcode()
         if status / 100 != 2:
             logger.error("bad status: {}".format(status))
             raise StatusError(status)
 
-        name = self._get_filename(response)
-        logger.debug("filename: {}".format(name))
-        localdir = encode(localdir)
-        file(os.path.join(localdir or ".", name), 'wb').write(content)
+        meta = stream.info()
+        name = self._get_filename(meta)
+        size = int(meta.getheaders("Content-Length")[0])
+        logger.debug("filename: {} with size: {}".format(name, size))
+        localdir = encode(localdir or ".")
+        with open(os.path.join(localdir, name), 'wb') as f:
+            while True:
+                buffer = stream.read(block_size)
+                if not buffer:
+                    break
+                f.write(buffer)
 
     def upload(self, uploaded, parent=None, by_name=False, precheck=True):
         """Upload the given file/directory to a remote directory"""
