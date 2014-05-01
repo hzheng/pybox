@@ -1,6 +1,8 @@
 [app]
-api_key=YOUR_API_KEY
+client_id = YOUR_CLIENT_ID
+client_secret = YOUR_CLIENT_SECRET
 
-[account-YOUR_ACCOUNT_LOGIN]
-auth_token=YOUR_AUTH_TOKEN
+[account-YOUR_ACCOUNT_NAME]
+access_token = YOUR_ACCESS_TOKEN
+refresh_token = YOUR_REFRESH_TOKEN
 

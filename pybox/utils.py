@@ -13,6 +13,7 @@ __email__ = "xyzdll[AT]gmail[DOT]com"
 
 import os
 import sys
+import re
 
 import ConfigParser
 import cookielib
@@ -31,6 +32,7 @@ ENCODING = sys.stdin.encoding # typically "UTF-8"
 LOGGER_CONF_FILE = os.path.join(
         os.getenv('LOG_CONF_DIR') or ".", "box-logging.conf")
 LOGGER_NAME = "box"
+EMAIL_REGEX = re.compile(r"([^@]+)@[^@]+\.[^@]+")
 
 
 def is_posix():
@@ -42,10 +44,10 @@ def get_sha1(file_obj, block_size=65536):
     sha = hashlib.sha1()
     with open(file_obj, 'rb') as f:
         while True:
-            buffer = f.read(block_size)
-            if not buffer:
+            buf = f.read(block_size)
+            if not buf:
                 break
-            sha.update(buffer)
+            sha.update(buf)
     return sha.hexdigest()
 
 
@@ -137,3 +139,10 @@ def decode_args(args, options):
         if isinstance(value, str):
             setattr(options, attr, value.decode(ENCODING))
     return [arg.decode(ENCODING) for arg in args]
+
+
+def user_of_email(string):
+    """Get the user of an Email address"""
+    matched = EMAIL_REGEX.match(string)
+    if matched:
+        return matched.groups()[0]

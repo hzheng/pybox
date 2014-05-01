@@ -17,7 +17,8 @@ import getpass
 from optparse import OptionParser
 
 from pybox.boxapi import BoxApi, ConfigError, StatusError
-from pybox.utils import decode_args, get_logger, print_unicode, stringify
+from pybox.utils import decode_args, get_logger, print_unicode, \
+        user_of_email, stringify
 
 logger = get_logger()
 
@@ -25,12 +26,12 @@ logger = get_logger()
 def parse_args(argv):
     usage = "usage: %prog [options] [args]"
     parser = OptionParser(usage)
-    parser.add_option("-U", "--username", dest="username",
-            help="username(email)")
-    parser.add_option("-p", "--password", action="store_true", dest="password",
-            help="prompt password")
+    parser.add_option("-L", "--login", dest="login",
+            help="login to create/update auth tokens")
+    parser.add_option("-U", "--user", dest="user_account",
+            help="user account")
     parser.add_option("-a", "--auth-token", action="store_true",
-            dest="auth_token", help="print auth token")
+            dest="auth_token", help="print auth tokens")
     parser.add_option("-I", "--account-info", action="store_true",
             dest="account_info", help="get account info")
     parser.add_option("-t", "--target", dest="target",
@@ -45,6 +46,8 @@ def parse_args(argv):
             help="make a directory")
     parser.add_option("-R", "--remove", action="store_true", dest="remove",
             help="remove a file or directory")
+    parser.add_option("--recursive", action="store_true", dest="recursive",
+            help="recursive")
     parser.add_option("-m", "--move", action="store_true", dest="move",
             help="move a file or directory")
     parser.add_option("-r", "--rename", action="store_true", dest="rename",
@@ -81,14 +84,34 @@ def parse_args(argv):
 
 
 def init_client(options):
-    username = options.username
-    if not username:
-        username = raw_input("username/email: ").strip()
-    password = getpass.getpass("password: ") if options.password else None
+    login = options.login
+    user_account = options.user_account
+    password = None
+    if not login and not user_account:
+        sys.stderr.write(
+                "You must specify either login(email) or account name\n")
+        sys.exit(1)
+
+    if login:
+        username = user_of_email(login)
+        if not username:
+            sys.stderr.write("Login should be a valid email address\n")
+            sys.exit(1)
+
+        password = getpass.getpass("password: ")
+        if not password:
+            sys.stderr.write("Password cannot be empty\n")
+            sys.exit(1)
+
+        if not user_account:
+            user_account = username
 
     try:
         client = BoxApi()
-        auth_token = client.get_auth_token(username, password)
+        access_token, refresh_token, token_time = client.get_auth_token(
+                user_account, login, password)
+        if login:
+            sys.exit()
     except ConfigError as e:
         sys.stderr.write("box configuration error - {}\n".format(e))
         sys.exit(1)
@@ -97,7 +120,9 @@ def init_client(options):
         sys.exit(1)
 
     if options.auth_token:
-        print_unicode(u"auth_token: {}".format(auth_token))
+        print_unicode(
+                u"access token:  {}\nrefresh token: {}\ntoken time: {}".format(
+                    access_token, refresh_token, token_time))
         sys.exit()
 
     if options.account_info:
@@ -145,8 +170,6 @@ def get_action(client, parser, options, args):
         params = []
         if options.onelevel:
             params.append(client.ONELEVEL)
-        if not options.zip:
-            params.append(client.NOZIP)
         if options.nofiles:
             params.append(client.NOFILES)
         if options.simple:
@@ -154,8 +177,13 @@ def get_action(client, parser, options, args):
         extra_args.append(params)
     elif options.info:
         action = 'get_file_info'
+        extra_args.append(target != 'd')
     elif options.remove:
-        action = 'rmdir' if target == "d" else 'remove'
+        if target == "d":
+            action = 'rmdir'
+            extra_args.append(options.recursive)
+        else:
+            action = 'remove'
     elif options.mkdir:
         action = 'mkdir'
         extra_args.append(options.chdir)
