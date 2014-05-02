@@ -22,6 +22,7 @@ import urllib2
 
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
+from mechanize._mechanize import FormNotFoundError
 
 from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
         stringify
@@ -71,7 +72,7 @@ class FileConflictionError(FileError):
 
 
 class MethodNotALLowedError(FileError):
-    """File not found error"""
+    """Method not allowed error"""
     pass
 
 
@@ -341,11 +342,17 @@ class BoxApi(object):
                    'state': security_token})
         url = self.AUTH_URL + "?" + params
         logger.debug("browsing auth url: {}".format(url))
-        code, state = self._automate(url, login, password)
-        if state != security_token:
-            raise StatusError("security token mismatched(CSRF)")
+        try:
+            code, state = self._automate(url, login, password)
+            if state != security_token:
+                raise StatusError("security token mismatched(CSRF)")
 
-        return code
+            logger.info("authorization succeeded")
+            return code
+        except FormNotFoundError as e:
+            logger.error(e.message)
+            raise ParameterError(
+                    "authorization failed, please check your login/password")
 
     def get_auth_token(self, account, login, password=None):
         """Get the access token and refresh token.
@@ -423,6 +430,7 @@ class BoxApi(object):
                 datetime.strftime(now, self.TIME_FORMAT))
         with open(self._conf_file, 'w') as conf:
             self._conf_parser.write(conf)
+        logger.info("tokens fetched")
         return self._access_token, self._refresh_token, now
 
     def update_auth_token(self):
@@ -460,9 +468,9 @@ class BoxApi(object):
         try:
             limit = int(limit)
             offset = int(offset)
-        except ValueError:
-            logger.error(u"both limit and offset should be integers")
-            raise ParameterError()
+        except ValueError as e:
+            logger.error(e.message)
+            raise ParameterError("both limit and offset should be integers")
 
         params = urllib.urlencode({
             'limit': limit, 'offset': offset, 'fields': fields})
@@ -546,8 +554,7 @@ class BoxApi(object):
             raise
         except MethodNotALLowedError:
             if not file_id.isdigit():
-                logger.error(u"id({}) is ill-formed".format(file_id))
-                raise ParameterError()
+                raise ParameterError("id({}) is ill-formed".format(file_id))
             raise
 
     def get_folder_info(self, folder_id, by_name=False):
@@ -585,8 +592,7 @@ class BoxApi(object):
             raise
         except MethodNotALLowedError:
             if not folder_id.isdigit():
-                logger.error(u"id({}) is ill-formed".format(folder_id))
-                raise ParameterError()
+                raise ParameterError("id({}) is ill-formed".format(folder_id))
             raise
 
     def mkdir(self, name, parent=None, by_name=False):
@@ -661,8 +667,7 @@ class BoxApi(object):
             raise
         except MethodNotALLowedError:
             if not id_.isdigit():
-                logger.error(u"id({}) is ill-formed".format(id_))
-                raise ParameterError()
+                raise ParameterError("id({}) is ill-formed".format(id_))
             raise
 
     def rename_file(self, id_, new_name, by_name=False):
@@ -739,7 +744,7 @@ class BoxApi(object):
             if e.errno != errno.EEXIST:
                 raise
 
-        files = (entry for entries in 
+        files = (entry for entries in
                 (i['item_collection']['entries'] for i in folder_info)
                 for entry in entries)
         for f in files:
@@ -913,7 +918,7 @@ class BoxApi(object):
                 DiffResult(localdir, remotedir[0], ignore_common))
 
     def _compare_dir(self, localdir, remotedir, result):
-        children = [entry for entries in 
+        children = [entry for entries in
                 (i['item_collection']['entries'] for i in remotedir)
                 for entry in entries]
         server_file_map = dict((f['name'], f) \
