@@ -196,12 +196,10 @@ class BoxApi(object):
     UPLOAD_URL = "https://upload.box.com/api/2.0/files{}/content"
     DOWNLOAD_URL = BASE_URL + "files/{}/content"
     ROOT_ID = "0"
-    ONELEVEL = "onelevel"
-    SIMPLE = "simple"
-    NOFILES = "nofiles"
     TIME_FORMAT = "%Y-%m-%d %H:%M"
     MAX_TOKEN_DAYS = 60
     SAFE_TOKEN_DAYS = 10
+    LIST_SIZE = 1000 # max number that box supports(its default is 100)
 
     # patterns
     FILENAME_PATTERN = re.compile('(.*filename=")(.+)(".*)')
@@ -227,6 +225,7 @@ class BoxApi(object):
         self._access_token = None
         self._refresh_token = None
         self._token_time = None
+        self._account = None
 
     @staticmethod
     def _log_response(response):
@@ -260,7 +259,9 @@ class BoxApi(object):
         req.add_header('Authorization', "Bearer {}".format(self._access_token))
         return urllib2.urlopen(req)
 
-    def _request(self, url, data=None, headers={}, method=None, is_json=True):
+    def _request(self, url, data=None, headers=None,
+            method=None, is_json=True):
+        headers = headers or {}
         response = None
         try:
             response = self._auth_request(url, data, headers, method)
@@ -444,15 +445,29 @@ class BoxApi(object):
 
         Refer: http://developers.box.com/docs/#folders-retrieve-a-folders-items
         """
+        ### TODO: if list item count > 1000, auto-paginate when necessary
         self._check()
 
-        if not extra_params:
-            extra_params = [self.ONELEVEL, self.SIMPLE]
         if not folder_id:
             folder_id = self.ROOT_ID
         elif by_name:
             folder_id = self._convert_to_id(folder_id, False)
-        url = "{}folders/{}/items".format(self.BASE_URL, encode(folder_id))
+        extra_params = extra_params or {}
+        limit = extra_params.get('limit', self.LIST_SIZE)
+        offset = extra_params.get('offset', 0)
+        ###XXX: doesn't take effect?
+        fields = extra_params.get('fields', 'name,id,sha1')
+        try:
+            int(limit)
+            int(offset)
+        except ValueError:
+            logger.error(u"both limit and offset should be integers")
+            raise ParameterError()
+
+        params = urllib.urlencode({
+            'limit': limit, 'offset': offset, 'fields': fields})
+        url = "{}folders/{}/items?{}".format(
+                self.BASE_URL, encode(folder_id), params)
         return self._request(url)
 
     @staticmethod
@@ -520,14 +535,18 @@ class BoxApi(object):
         """
         self._check()
 
+        params = ""
         if is_file:
             type_ = "file"
         else:
             type_ = "folder"
+            params = urllib.urlencode(
+                    {'limit': self.LIST_SIZE, 'offset': 0})
         if by_name:
             file_id = self._convert_to_id(file_id, is_file)
 
-        url = "{}{}s/{}".format(self.BASE_URL, type_, encode(file_id))
+        url = "{}{}s/{}?{}".format(
+                self.BASE_URL, type_, encode(file_id), params)
         try:
             return self._request(url)
         except FileNotFoundError:
@@ -535,9 +554,7 @@ class BoxApi(object):
                 type_, file_id))
             raise
         except MethodNotALLowedError:
-            try:
-                int(file_id)
-            except ValueError:
+            if not file_id.isdigit():
                 logger.error(u"id({}) is ill-formed".format(file_id))
                 raise ParameterError()
             raise
@@ -613,9 +630,7 @@ class BoxApi(object):
                         "is nonempty, try recursive deletion".format(id_))
             raise
         except MethodNotALLowedError:
-            try:
-                int(id_)
-            except ValueError:
+            if not id_.isdigit():
                 logger.error(u"id({}) is ill-formed".format(id_))
                 raise ParameterError()
             raise

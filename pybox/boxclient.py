@@ -38,6 +38,12 @@ def parse_args(argv):
             help="target(f for file<default>, d for directory)")
     parser.add_option("-l", "--list", action="store_true", dest="list",
             help="list directory")
+    parser.add_option("--limit", dest="limit",
+            help="limit of list items(default: 1000)")
+    parser.add_option("--offset", dest="offset",
+            help="offset of list items(default: 0)")
+    parser.add_option("-F", "--fields", dest="fields",
+            help="attributes to include in list items(default: 0)")
     parser.add_option("-w", "--what-id", dest="what_id",
             help="get a path(server-side)'s id")
     parser.add_option("-i", "--info", action="store_true", dest="info",
@@ -52,14 +58,6 @@ def parse_args(argv):
             help="move a file or directory")
     parser.add_option("-r", "--rename", action="store_true", dest="rename",
             help="rename a file or directory")
-    parser.add_option("-1", "--onelevel", action="store_true", dest="onelevel",
-            help="list one level files")
-    parser.add_option("-z", "--zip", action="store_true", dest="zip",
-            help="list file tree in zip format")
-    parser.add_option("-N", "--nofiles", action="store_true", dest="nofiles",
-            help="only list directory")
-    parser.add_option("-s", "--simple", action="store_true", dest="simple",
-            help="simple info")
     parser.add_option("-c", "--chdir", dest="chdir",
             help="change directory")
     parser.add_option("-d", "--download", action="store_true", dest="download",
@@ -167,13 +165,13 @@ def get_action(client, parser, options, args):
         args = zip(args[::2], args[1::2])
     elif options.list:
         action = 'list'
-        params = []
-        if options.onelevel:
-            params.append(client.ONELEVEL)
-        if options.nofiles:
-            params.append(client.NOFILES)
-        if options.simple:
-            params.append(client.SIMPLE)
+        params = {}
+        if options.limit:
+            params['limit'] = options.limit
+        if options.offset:
+            params['offset'] = options.offset
+        if options.fields:
+            params['fields'] = options.fields
         extra_args.append(params)
     elif options.info:
         action = 'get_file_info'
