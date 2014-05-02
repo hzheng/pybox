@@ -458,8 +458,8 @@ class BoxApi(object):
         ###XXX: doesn't take effect?
         fields = extra_params.get('fields', 'name,id,sha1')
         try:
-            int(limit)
-            int(offset)
+            limit = int(limit)
+            offset = int(offset)
         except ValueError:
             logger.error(u"both limit and offset should be integers")
             raise ParameterError()
@@ -526,36 +526,66 @@ class BoxApi(object):
             raise ValueError("wrong file name")
         return file_id
 
-    def get_file_info(self, file_id, is_file=True, by_name=False):
-        """Get file/folder's detailed information
+    def get_file_info(self, file_id, by_name=False):
+        """Get file's detailed information
 
         Refer:
         http://developers.box.com/docs/#files-get
-        http://developers.box.com/docs/#folders-get-information-about-a-folder
         """
         self._check()
 
-        params = ""
-        if is_file:
-            type_ = "file"
-        else:
-            type_ = "folder"
-            params = urllib.urlencode(
-                    {'limit': self.LIST_SIZE, 'offset': 0})
         if by_name:
-            file_id = self._convert_to_id(file_id, is_file)
-
-        url = "{}{}s/{}?{}".format(
-                self.BASE_URL, type_, encode(file_id), params)
+            file_id = self._convert_to_id(file_id, True)
+        url = "{}{}s/{}".format(
+                self.BASE_URL, "file", encode(file_id))
         try:
             return self._request(url)
+
         except FileNotFoundError:
-            logger.error(u"cannot find a {} with id: {}".format(
-                type_, file_id))
+            logger.error(u"cannot find a file with id: {}".format(file_id))
             raise
         except MethodNotALLowedError:
             if not file_id.isdigit():
                 logger.error(u"id({}) is ill-formed".format(file_id))
+                raise ParameterError()
+            raise
+
+    def get_folder_info(self, folder_id, by_name=False):
+        """Get folder's detailed information.
+        Result is array type due to pagination
+
+        Refer:
+        http://developers.box.com/docs/#folders-get-information-about-a-folder
+        """
+        self._check()
+
+        if by_name:
+            folder_id = self._convert_to_id(folder_id, False)
+        try:
+            results = []
+            limit = self.LIST_SIZE
+            offset = 0
+            while True:
+                params = urllib.urlencode(
+                        {'limit': limit, 'offset': offset})
+                url = "{}{}s/{}?{}".format(
+                        self.BASE_URL, 'folder', encode(folder_id), params)
+                result = self._request(url)
+                results.append(result)
+                children = result['item_collection']
+                count = children['total_count']
+                offset = children['offset']
+                limit = children['limit']
+                offset += limit
+                if offset >= count:
+                    break
+            return results
+        except FileNotFoundError:
+            logger.error(u"cannot find a folder with id: {}".format(folder_id))
+            raise
+        except MethodNotALLowedError:
+            if not folder_id.isdigit():
+                logger.error(u"id({}) is ill-formed".format(folder_id))
                 raise ParameterError()
             raise
 
@@ -700,11 +730,8 @@ class BoxApi(object):
         """Download the directory with the given id to a local directory"""
         self._check()
 
-        if by_name:
-            folder_id = self._convert_to_id(folder_id, False)
-
-        folder_info = self.get_file_info(folder_id, False)
-        folder_name = folder_info['name']
+        folder_info = self.get_folder_info(folder_id, by_name)
+        folder_name = folder_info[0]['name']
         localdir = os.path.join(localdir or ".", folder_name)
         try:
             os.makedirs(localdir)
@@ -712,8 +739,10 @@ class BoxApi(object):
             if e.errno != errno.EEXIST:
                 raise
 
-        files = folder_info['item_collection']['entries']
-        for f in (files or []):
+        files = (entry for entries in 
+                (i['item_collection']['entries'] for i in folder_info)
+                for entry in entries)
+        for f in files:
             file_name = f['name']
             file_id = f['id']
             file_type = f['type']
@@ -872,24 +901,26 @@ class BoxApi(object):
     def compare_file(self, localfile, remotefile, by_name=False):
         """Compare files between server and client(as per SHA1)"""
         sha1 = get_sha1(localfile)
-        info = self.get_file_info(remotefile, True, by_name)
+        info = self.get_file_info(remotefile, by_name)
         return sha1 == info['sha1']
 
     def compare_dir(self, localdir, remotedir,
             by_name=False, ignore_common=True):
         """Compare directories between server and client"""
-        remotedir = self.get_file_info(remotedir, False, by_name)
+        remotedir = self.get_folder_info(remotedir, by_name)
         localdir = os.path.normpath(localdir)
         return self._compare_dir(localdir, remotedir,
-                DiffResult(localdir, remotedir, ignore_common))
+                DiffResult(localdir, remotedir[0], ignore_common))
 
     def _compare_dir(self, localdir, remotedir, result):
-        children = remotedir['item_collection']['entries']
+        children = [entry for entries in 
+                (i['item_collection']['entries'] for i in remotedir)
+                for entry in entries]
         server_file_map = dict((f['name'], f) \
                             for f in children if 'sha1' in f)
         server_folder_map = dict((f['name'], f) \
                             for f in children if 'sha1' not in f)
-        result_item = result.start_add(remotedir)
+        result_item = result.start_add(remotedir[0])
 
         subfolders = []
         for filename in os.listdir(localdir):
@@ -912,7 +943,7 @@ class BoxApi(object):
         # compare recursively
         for folder in subfolders:
             path = os.path.join(localdir, folder['name'])
-            folder = self.get_file_info(folder['id'], False)
+            folder = self.get_folder_info(folder['id'])
             self._compare_dir(path, folder, result)
         result.end_add()
         return result
@@ -952,7 +983,7 @@ class BoxApi(object):
             id_ = node['id']
             logger.info(u"removing folder {} with id = {}".format(path, id_))
             if not dry_run:
-                self.rmdir(id_)
+                self.rmdir(id_, True)
 
         diff_files = result.get_compare(True)
         for localpath, remote_node, context_node in diff_files:

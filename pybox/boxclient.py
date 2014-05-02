@@ -174,8 +174,7 @@ def get_action(client, parser, options, args):
             params['fields'] = options.fields
         extra_args.append(params)
     elif options.info:
-        action = 'get_file_info'
-        extra_args.append(target != 'd')
+        action = 'get_folder_info' if target == "d" else 'get_file_info'
     elif options.remove:
         if target == "d":
             action = 'rmdir'
