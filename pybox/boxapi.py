@@ -950,21 +950,31 @@ class BoxApi(object):
         datagen = DataWrapper(upload_file, datagen, headers)
         return self._request(url, datagen, headers, retryable=False)
 
-    def compare_file(self, localfile, remotefile, by_name=False):
+    def compare(self, localpath, remotefile, by_name=False):
+        if not os.path.exists(localpath):
+            raise ValueError("local file '{}' doesn't exist".format(localpath))
+        elif os.path.isdir(localpath):
+            return self._compare_dir(localpath, remotefile, by_name)
+        elif os.path.isfile(localpath):
+            return self._compare_file(localpath, remotefile, by_name)
+        else:
+            raise ValueError("local path '{}' is neither a folder or a regular file".format(localpath))
+
+    def _compare_file(self, localfile, remotefile, by_name=False):
         """Compare files between server and client(as per SHA1)"""
         sha1 = get_sha1(localfile)
         info = self.get_file_info(remotefile, by_name)
         return sha1 == info['sha1']
 
-    def compare_dir(self, localdir, remotedir,
-            by_name=False, ignore_common=True):
+    def _compare_dir(self, localdir, remotedir, by_name=False,
+            ignore_common=True):
         """Compare directories between server and client"""
         remotedir = self.get_folder_info(remotedir, by_name)
         localdir = os.path.normpath(localdir)
-        return self._compare_dir(localdir, remotedir,
+        return self._do_compare_dir(localdir, remotedir,
                 DiffResult(localdir, remotedir[0], ignore_common))
 
-    def _compare_dir(self, localdir, remotedir, result):
+    def _do_compare_dir(self, localdir, remotedir, result):
         children = [entry for entries in
                 (i['item_collection']['entries'] for i in remotedir)
                 for entry in entries]
@@ -996,7 +1006,7 @@ class BoxApi(object):
         for folder in subfolders:
             path = os.path.join(localdir, folder['name'])
             folder = self.get_folder_info(folder['id'])
-            self._compare_dir(path, folder, result)
+            self._do_compare_dir(path, folder, result)
         result.end_add()
         return result
 
@@ -1066,7 +1076,7 @@ class BoxApi(object):
         """Sync directories between client(source) and server(destination)"""
         if dry_run:
             logger.info("push dry run...")
-        result = self.compare_dir(localdir, remotedir, by_name)
+        result = self._compare_dir(localdir, remotedir, by_name)
 
         for is_file, path, id_ in self._server_only_files(result):
             self._delete_remote(dry_run, is_file, path, id_)
@@ -1082,7 +1092,7 @@ class BoxApi(object):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
-        result = self.compare_dir(localdir, remotedir, by_name)
+        result = self._compare_dir(localdir, remotedir, by_name)
 
         for is_file, path, _ in self._client_only_files(result, localdir):
             self._delete_local(dry_run, is_file, path)

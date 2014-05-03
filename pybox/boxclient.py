@@ -195,7 +195,7 @@ def get_action(client, parser, options, args):
     elif options.compare:
         if len(args) % 2:
             parser.error("compare's arguments must be even numbers")
-        action = 'compare_dir' if target == "d" else 'compare_file'
+        action = 'compare'
         # pair the arguments
         args = zip(args[::2], args[1::2])
     elif options.push or options.pull:
