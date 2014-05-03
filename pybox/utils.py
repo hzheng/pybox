@@ -14,6 +14,8 @@ __email__ = "xyzdll[AT]gmail[DOT]com"
 import os
 import sys
 import re
+import time
+from functools import wraps
 
 import ConfigParser
 import cookielib
@@ -146,3 +148,56 @@ def user_of_email(string):
     matched = EMAIL_REGEX.match(string)
     if matched:
         return matched.groups()[0]
+
+
+def retry(ForgivableExceptions, forgive=lambda x: True,
+        tries=5, delay=5, backoff=2, logger=None):
+    """Retry decorator with exponential backoff.
+    `ForgivableExceptions` is a type of Exception(or Exception tuple)
+    `forgive` is a function which takes the caught exception as its argument,
+    the meaning of its return value is as follows:
+    a negative object(e.g. `False`, `None`) means the old exception will be
+    rethrown, an `Exception` object means it will be thrown,
+    otherwise the failed call is forgiven and will be retried.
+    Furthermore, if the return value is a function, it will be invoked
+    before the next try. This function takes the retried call's first
+    argument(if any) as its argument(which is typically the calling object).
+
+    Inspired by:
+    http://www.saltycrane.com/blog/2009/11/trying-out-retry-decorator-python/
+    """
+
+    def deco_retry(f):
+
+        if tries < 1:
+            raise ValueError("tries must be at least 1")
+
+        @wraps(f)
+        def f_retry(*args, **kwargs):
+            mtries, mdelay = tries, delay
+            while mtries > 1:
+                try:
+                    return f(*args, **kwargs)
+                except ForgivableExceptions as e:
+                    forgiven = forgive(e) or e
+                    if isinstance(forgiven, BaseException):
+                        if logger:
+                            logger.error("just give up: {}", e)
+                        raise forgiven
+
+                    msg = "Error: {}. Retry in {} seconds...".format(
+                            str(e), mdelay)
+                    if logger:
+                        logger.warn(msg)
+                    else:
+                        print msg
+                    time.sleep(mdelay)
+                    mtries -= 1
+                    mdelay *= backoff
+                    if callable(forgiven):
+                        forgiven(args[0] if len(args) else None)
+            return f(*args, **kwargs) # last chance
+
+        return f_retry
+
+    return deco_retry

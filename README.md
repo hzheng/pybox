@@ -97,7 +97,7 @@ All supported options are listed as follows:
 
 * _-C, --compare_ compare local and remote directories
 
-* _-S, --sync_ sync local and remote directories
+* _-s, --sync_ sync local(source) and remote directories(destination)
 
 * _-n, --dry-run_ show what would have been transferred when sync
 
@@ -176,7 +176,7 @@ Assume all the following operations are performed on Bob's account.
 * sync a local directory `/Users/bob/dir1`(source) with a remote directory
   `dir2/dir3`(destination)
 
-        python pybox/boxclient.py -Ubob -PS /Users/bob/dir1 dir2/dir3
+        python pybox/boxclient.py -Ubob -Ps /Users/bob/dir1 dir2/dir3
 
 
 REFERENCE

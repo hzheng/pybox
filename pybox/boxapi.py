@@ -17,6 +17,7 @@ import json
 import os
 import re
 from datetime import datetime
+import socket
 import urllib
 import urllib2
 
@@ -25,7 +26,7 @@ from poster.streaminghttp import register_openers
 from mechanize._mechanize import FormNotFoundError
 
 from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
-        stringify
+        stringify, retry
 
 
 logger = get_logger()
@@ -53,6 +54,11 @@ class StatusError(Exception):
 
 class RequestError(Exception):
     """request error"""
+    pass
+
+
+class ForbiddenError(Exception):
+    """forbidden error"""
     pass
 
 
@@ -186,6 +192,39 @@ class DiffResult(object):
         return encode(unicode(self))
 
 
+def forgive_request(e):
+    """Give the failed request a retry"""
+    if isinstance(e, urllib2.HTTPError):
+        err = e.code
+        if err >= 500: # not client's fault, try our luck
+            return True
+        elif err == 401: # unauthorized, try to update tokens
+            return BoxApi.update_auth_token
+        elif err == 408: # time-out
+            return True
+        elif err == 429: # too many requests
+            return True
+        elif err == 403: # forbidden
+            return ForbiddenError()
+        elif err == 404: # not found
+            return FileNotFoundError()
+        elif err == 409: # file confliction
+            return FileConflictionError()
+        elif err == 405: # method not allowd
+            return MethodNotALLowedError()
+        elif err == 400: # bad request
+            return RequestError()
+    elif isinstance(e, urllib2.URLError):
+        #if isinstance(e.reason, socket.timeout):
+            #return True
+        if isinstance(e.reason, socket.error):
+            return True
+        else:
+            logger.error("non socket.error: {}".format(e))
+    elif isinstance(e, socket.error):
+        return True
+
+
 class BoxApi(object):
     """Box API"""
     BOX_URL = "box.com/2.0/"
@@ -252,38 +291,22 @@ class BoxApi(object):
                 response_obj['error_description']))
         return response_obj
 
+    @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
+    def _retryable_auth_request(self, url, data, headers, method):
+        return self._auth_request(url, data, headers, method)
+
     def _auth_request(self, url, data, headers, method):
         logger.debug(u"requesting {}...".format(url))
         req = urllib2.Request(url, data, headers)
         if method:
             req.get_method = lambda: method
         req.add_header('Authorization', "Bearer {}".format(self._access_token))
-        return urllib2.urlopen(req)
+        return urllib2.urlopen(req, timeout=60)
 
     def _request(self, url, data=None, headers=None,
-            method=None, is_json=True):
-        headers = headers or {}
-        response = None
-        try:
-            response = self._auth_request(url, data, headers, method)
-        except urllib2.HTTPError as e:
-            err = e.getcode()
-            if err == 401: # unauthorized, retry
-                self.update_auth_token()
-                try: # retry
-                    response = self._auth_request(url, data, headers, method)
-                except:
-                    raise
-            elif err == 404: # not found
-                raise FileNotFoundError()
-            elif err == 409: # file confliction
-                raise FileConflictionError()
-            elif err == 405: # method not allowd
-                raise MethodNotALLowedError()
-            elif err == 400: # bad request
-                raise RequestError()
-            else:
-                raise
+            method=None, is_json=True, retryable=True):
+        auth_req = ('_retryable' if retryable else '') + '_auth_request'
+        response = getattr(self, auth_req)(url, data, headers or {}, method)
         if response:
             if is_json:
                 info = self._parse_response(response)
@@ -463,8 +486,8 @@ class BoxApi(object):
         extra_params = extra_params or {}
         limit = extra_params.get('limit', self.LIST_SIZE)
         offset = extra_params.get('offset', 0)
-        ###XXX: doesn't take effect?
-        fields = extra_params.get('fields', 'name,id,sha1')
+        fields = extra_params.get('fields', '')
+        #fields = extra_params.get('fields', 'created_at,modified_at')
         try:
             limit = int(limit)
             offset = int(offset)
@@ -655,7 +678,7 @@ class BoxApi(object):
         if recursive and not is_file:
             url += "?recursive=true"
         try:
-            return self._request(url, None, {}, 'DELETE')
+            return self._request(url, method='DELETE')
         except FileNotFoundError:
             logger.error(u"cannot find a {} with id: {}".format(
                 type_, id_))
@@ -696,6 +719,12 @@ class BoxApi(object):
             raise
 
     def _update_info(self, is_file, id_, new_info, by_name):
+        """Update a file/directory's information
+
+        Refer:
+        http://developers.box.com/docs/#files-update-a-files-information
+        http://developers.box.com/docs/#folders-update-information-about-a-folder
+        """
         self._check()
 
         if by_name:
@@ -706,18 +735,26 @@ class BoxApi(object):
             type_ = "folder"
         url = "{}{}s/{}".format(self.BASE_URL, type_, id_)
         try:
-            return self._request(url, json.dumps(new_info), {}, 'PUT')
+            return self._request(url, json.dumps(new_info), method='PUT')
         except FileNotFoundError:
             logger.error(u"cannot find a {} with id: {}".format(
                 type_, id_))
             raise
 
     def move_file(self, file_, new_folder, by_name=False):
-        """Move a file to another folder"""
+        """Move a file to another folder
+
+        Refer:
+        http://developers.box.com/docs/#files-update-a-files-information
+        """
         self._move(True, file_, new_folder, by_name)
 
     def move_dir(self, folder, new_folder, by_name=False):
-        """Move a directory to another folder"""
+        """Move a directory to another folder
+
+        Refer:
+        http://developers.box.com/docs/#folders-update-information-about-a-folder
+        """
         self._move(False, folder, new_folder, by_name)
 
     def _move(self, is_file, target, new_folder, by_name):
@@ -766,8 +803,7 @@ class BoxApi(object):
             else:
                 logger.warn(u"unexpected file type".format(file_type))
 
-    def download_file(self, file_id, localdir=None, by_name=False,
-            block_size=65536):
+    def download_file(self, file_id, localdir=None, by_name=False):
         """Download the file with the given id to a local directory
 
         Refer:
@@ -777,17 +813,23 @@ class BoxApi(object):
 
         if by_name:
             file_id = self._convert_to_id(file_id, True)
+        localdir = encode(localdir or ".")
         url = self.DOWNLOAD_URL.format(encode(file_id))
+        self._do_download(localdir, url)
+
+    @retry((urllib2.URLError, socket.error), forgive_request,
+            tries=10, logger=logger)
+    def _do_download(self, localdir, url):
         logger.debug("download url: {}".format(url))
-        stream = self._request(url, None, {}, None, False)
+        stream = self._request(url, is_json=False, retryable=False)
         meta = stream.info()
         name = self._get_filename(meta)
         size = int(meta.getheaders("Content-Length")[0])
         logger.debug("filename: {} with size: {}".format(name, size))
-        localdir = encode(localdir or ".")
+        BLOCK_SIZE = 65536
         with open(os.path.join(localdir, name), 'wb') as f:
             while True:
-                buf = stream.read(block_size)
+                buf = stream.read(BLOCK_SIZE)
                 if not buf:
                     break
                 f.write(buf)
@@ -860,6 +902,10 @@ class BoxApi(object):
             remote_id = precheck
 
         url = self.UPLOAD_URL.format(("/" + remote_id) if remote_id else "")
+        return self._do_upload(upload_file, parent, url)
+
+    @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
+    def _do_upload(self, upload_file, parent, url):
         logger.debug(u"uploading {} to {}".format(upload_file, parent))
 
         # Register the streaming http handlers with urllib2
@@ -901,7 +947,7 @@ class BoxApi(object):
                     return self.datagen.next()
 
         datagen = DataWrapper(upload_file, datagen, headers)
-        return self._request(url, datagen, headers)
+        return self._request(url, datagen, headers, retryable=False)
 
     def compare_file(self, localfile, remotefile, by_name=False):
         """Compare files between server and client(as per SHA1)"""
@@ -955,7 +1001,7 @@ class BoxApi(object):
 
     def sync(self, localdir, remotedir, dry_run=False, by_name=False,
             ignore=None):
-        """Sync directories between client and server"""
+        """Sync directories between client(source) and server(destination)"""
         if dry_run:
             logger.info("dry run...")
         result = self.compare_dir(localdir, remotedir, by_name)

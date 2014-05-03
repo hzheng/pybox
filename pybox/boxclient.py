@@ -68,8 +68,8 @@ def parse_args(argv):
             help="use plain name instead of id")
     parser.add_option("-C", "--compare", action="store_true", dest="compare",
             help="compare local and remote directories")
-    parser.add_option("-S", "--sync", action="store_true", dest="sync",
-            help="sync local and remote files or directories")
+    parser.add_option("-s", "--sync", action="store_true", dest="sync",
+            help="sync local(source) and remote(destination) directories")
     parser.add_option("-n", "--dry-run", action="store_true", dest="dry_run",
             help="show what would have been transferred when sync")
     parser.add_option("-f", "--from-file", dest="from_file",
