@@ -17,6 +17,7 @@ import json
 import os
 import re
 from datetime import datetime
+import shutil
 import socket
 import urllib
 import urllib2
@@ -999,57 +1000,95 @@ class BoxApi(object):
         result.end_add()
         return result
 
-    def sync(self, localdir, remotedir, dry_run=False, by_name=False,
+    def _client_only_files(self, result, localdir):
+        for path, node in result.get_client_unique(True):
+            yield True, os.path.join(localdir, path), node['id']
+        for path, node in result.get_client_unique(False):
+            yield False, os.path.join(localdir, path), node['id']
+
+    def _server_only_files(self, result):
+        for path, node in result.get_server_unique(True):
+            yield True, path, node['id']
+        for path, node in result.get_server_unique(False):
+            yield False, path, node['id']
+
+    def _diff_files(self, result, localdir):
+        diff_files = result.get_compare(True)
+        for path, remote_node, context_node in diff_files:
+            if localdir is None:
+                yield path, remote_node['id']
+            else:
+                yield os.path.join(localdir, path), remote_node['id'], \
+                        context_node['id']
+
+    def _delete_remote(self, dry_run, is_file, path, id_):
+        logger.info(u"removing the remote {} '{}'(id={})".format(
+            "file" if is_file else "folder", path, id_))
+        if not dry_run:
+            if is_file:
+                self.remove(id_)
+            else:
+                self.rmdir(id_, True)
+
+    def _delete_local(self, dry_run, is_file, path):
+        logger.info(u"removing the local {} '{}'".format(
+            "file" if is_file else "folder", path))
+        if not dry_run:
+            if is_file:
+                os.remove(path)
+            else:
+                shutil.rmtree(path)
+
+    def _upload_path(self, dry_run, is_file, path, parent, precheck=False):
+        if precheck:
+            logger.info(u"uploading a new version of the file '{}'(id={}," \
+                    "parent id={})".format(path, precheck, parent))
+        else:
+            logger.info(u"uploading a new {} '{}'(parent id={})".format(
+                "file" if is_file else "folder", path, parent))
+        if not dry_run:
+            self.upload(path, parent, precheck=precheck)
+
+    def _download_path(self, dry_run, is_file, path, id_, localdir,
+            is_new=True):
+        localdir = os.path.join(localdir, os.path.dirname(path))
+        logger.info(u"downloading the {} '{}'(id={}) to {}{}".format(
+            "file" if is_file else "folder", path, id_, localdir,
+            "" if is_new else "(new version)"))
+        if not dry_run:
+            if is_file:
+                self.download_file(id_, localdir)
+            else:
+                self.download_dir(id_, localdir)
+
+    def push(self, localdir, remotedir, dry_run=False, by_name=False,
             ignore=None):
         """Sync directories between client(source) and server(destination)"""
         if dry_run:
-            logger.info("dry run...")
+            logger.info("push dry run...")
         result = self.compare_dir(localdir, remotedir, by_name)
-        client_unique_files = result.get_client_unique(True)
-        for path, node in client_unique_files:
-            f = os.path.join(localdir, path)
-            id_ = node['id']
-            if ignore and ignore(f):
-                logger.info(u"ignoring file: {}".format(f))
-            else:
-                logger.info(u"uploading file: {} to node {}".format(f, id_))
-                if not dry_run:
-                    self.upload(f, id_, False, False)
-        client_unique_folders = result.get_client_unique(False)
-        for path, node in client_unique_folders:
-            f = os.path.join(localdir, path)
-            id_ = node['id']
-            logger.info(u"uploading folder: {} to node {}".format(f, id_))
-            if not dry_run:
-                self.upload(f, id_, False, False)
 
-        server_unique_files = result.get_server_unique(True)
-        for path, node in server_unique_files:
-            id_ = node['id']
-            logger.info(u"removing file {} with id = {}".format(path, id_))
-            if not dry_run:
-                self.remove(id_)
-        server_unique_folders = result.get_server_unique(False)
-        for path, node in server_unique_folders:
-            id_ = node['id']
-            logger.info(u"removing folder {} with id = {}".format(path, id_))
-            if not dry_run:
-                self.rmdir(id_, True)
+        for is_file, path, id_ in self._server_only_files(result):
+            self._delete_remote(dry_run, is_file, path, id_)
 
-        diff_files = result.get_compare(True)
-        for localpath, remote_node, context_node in diff_files:
-            localfile = os.path.join(localdir, localpath)
-            remote_id = remote_node['id']
-            remotedir_id = context_node['id']
-            logger.info(u"uploading diff file {} with remote id = {} under {}"
-                    .format(localfile, remote_id, remotedir_id))
-            if not dry_run:
-                self.upload(localfile, remotedir_id, False, remote_id)
+        for is_file, path, parent in self._client_only_files(result, localdir):
+            self._upload_path(dry_run, is_file, path, parent)
 
-        #diff_files = result.get_compare(False)
-        #for localpath, remote_node, context_node in diff_files:
-            #localfile = os.path.join(localdir, localpath)
-            #remote_id = remote_node['id']
-            #remotedir_id = context_node['id']
-            #print u"same file {} with remote id = {} under {}".format(
-                    #localfile, remote_id, remotedir_id)
+        for path, id_, parent in self._diff_files(result, localdir):
+            self._upload_path(dry_run, True, path, parent, id_)
+
+    def pull(self, remotedir, localdir, dry_run=False, by_name=False,
+            ignore=None):
+        """Sync directories between server(source) and client(destination)"""
+        if dry_run:
+            logger.info("pull dry run...")
+        result = self.compare_dir(localdir, remotedir, by_name)
+
+        for is_file, path, _ in self._client_only_files(result, localdir):
+            self._delete_local(dry_run, is_file, path)
+
+        for is_file, path, id_ in self._server_only_files(result):
+            self._download_path(dry_run, is_file, path, id_, localdir)
+
+        for path, id_ in self._diff_files(result, None):
+            self._download_path(dry_run, True, path, id_, localdir, False)

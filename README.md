@@ -97,7 +97,9 @@ All supported options are listed as follows:
 
 * _-C, --compare_ compare local and remote directories
 
-* _-s, --sync_ sync local(source) and remote directories(destination)
+* _--push_ sync(push) local(source) and remote directories(destination)
+
+* _--pull_ sync(pull) remote(source) and local directories(destination)
 
 * _-n, --dry-run_ show what would have been transferred when sync
 
@@ -173,10 +175,15 @@ Assume all the following operations are performed on Bob's account.
 
         python pybox/boxclient.py -Ubob -td -PC /Users/bob/dir1 dir2/dir3
 
-* sync a local directory `/Users/bob/dir1`(source) with a remote directory
+* sync(push) a local directory `/Users/bob/dir1`(source) with a remote directory
   `dir2/dir3`(destination)
 
-        python pybox/boxclient.py -Ubob -Ps /Users/bob/dir1 dir2/dir3
+        python pybox/boxclient.py -Ubob -P --push /Users/bob/dir1 dir2/dir3
+
+* sync(pull) a remote directory `dir2/dir3`(source) with a local directory
+  `/Users/bob/dir1`(destination)
+
+        python pybox/boxclient.py -Ubob -P --pull dir2/dir3 /Users/bob/dir1
 
 
 REFERENCE

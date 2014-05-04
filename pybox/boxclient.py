@@ -68,8 +68,10 @@ def parse_args(argv):
             help="use plain name instead of id")
     parser.add_option("-C", "--compare", action="store_true", dest="compare",
             help="compare local and remote directories")
-    parser.add_option("-s", "--sync", action="store_true", dest="sync",
-            help="sync local(source) and remote(destination) directories")
+    parser.add_option("--push", action="store_true", dest="push",
+            help="sync from local(source) to remote(destination) directories")
+    parser.add_option("--pull", action="store_true", dest="pull",
+            help="sync from remote(source) to local(destination) directories")
     parser.add_option("-n", "--dry-run", action="store_true", dest="dry_run",
             help="show what would have been transferred when sync")
     parser.add_option("-f", "--from-file", dest="from_file",
@@ -196,10 +198,10 @@ def get_action(client, parser, options, args):
         action = 'compare_dir' if target == "d" else 'compare_file'
         # pair the arguments
         args = zip(args[::2], args[1::2])
-    elif options.sync:
+    elif options.push or options.pull:
         if len(args) % 2:
-            parser.error("sync's arguments must be even numbers")
-        action = 'sync'
+            parser.error("push/pull's arguments must be even numbers")
+        action = 'push' if options.push else 'pull'
         # pair the arguments
         args = zip(args[::2], args[1::2])
         extra_args.append(options.dry_run)
