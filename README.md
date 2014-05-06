@@ -93,13 +93,11 @@ All supported options are listed as follows:
 
 * _-u, --upload_ upload file
 
-* _-P, --plain-name_ use plain name(server-side) instead of id
-
 * _-C, --compare_ compare local and remote directories
 
-* _--push_ sync(push) local(source) and remote directories(destination)
+* _-p, --push_ sync(push) local(source) and remote directories(destination)
 
-* _--pull_ sync(pull) remote(source) and local directories(destination)
+* _-P, --pull_ sync(pull) remote(source) and local directories(destination)
 
 * _-n, --dry-run_ show what would have been transferred when sync
 
@@ -110,13 +108,18 @@ EXAMPLES
 
 Assume all the following operations are performed on Bob's account.
 
+Note: only when a remote path is `0`(root id) or consists exclusively of 5+ digits,
+will it be considered as a node id. Otherwise, it's interpreted as path
+starting from the remote root. If a remote path happens to be `0` or digits, be
+sure to prepend it with '/' to avoid confusion.
+
 * show account information:
 
         python pybox/boxclient.py -Ubob -I
 
 * list all files under root
 
-        python pybox/boxclient.py -Ubob -l 0 (0 is the root id)
+        python pybox/boxclient.py -Ubob -l /
 
 * create a directory `dir1` under root:
 
@@ -124,7 +127,7 @@ Assume all the following operations are performed on Bob's account.
 
 * create a directory `dir2` under `dir1`:
 
-        python pybox/boxclient.py -Ubob -P -c dir1 -M dir2
+        python pybox/boxclient.py -Ubob -c dir1 -M dir2
 
 * get directory `dir1/dir2`(starting from root)'s id:
 
@@ -138,9 +141,9 @@ Assume all the following operations are performed on Bob's account.
 
         python pybox/boxclient.py -Ubob -c1005691453 -u file3
 
-* upload `file4` to a directory whose path is 'path1/path2'(starting from root)
+* upload `file4` to a directory whose path is 'path1/path2'
 
-        python pybox/boxclient.py -Ubob -P -c path1/path2 -u file4
+        python pybox/boxclient.py -Ubob -c path1/path2 -u file4
 
 * remove a file whose id is `1005181453`
 
@@ -148,15 +151,15 @@ Assume all the following operations are performed on Bob's account.
 
 * remove a directory whose path is `path1/path2`(starting from root)
 
-        python pybox/boxclient.py -Ubob -PR -td path1/path2
+        python pybox/boxclient.py -Ubob -R -td path1/path2
 
 * rename file `file1` to `file1.new`, file `file2` to `file2.new`
 
-        python pybox/boxclient.py -Ubob -Pr file1 file1.new file2 file2.new
+        python pybox/boxclient.py -Ubob -r file1 file1.new file2 file2.new
 
 * rename directory `dir1` to `dir2`
 
-        python pybox/boxclient.py -Ubob -Pr -td dir1 dir2
+        python pybox/boxclient.py -Ubob -r -td dir1 dir2
 
 * move a file with id `1025611460` to a directory with id `225236230`
 
@@ -165,25 +168,25 @@ Assume all the following operations are performed on Bob's account.
 * move directory `dir1` to directory `dir2`, directory `dir3/dir4` to directory
   `dir5/dir6/dir7`
 
-        python pybox/boxclient.py -Ubob -td -Pm dir1 dir2 dir3/dir4 dir5/dir6/dir7
+        python pybox/boxclient.py -Ubob -td -m dir1 dir2 dir3/dir4 dir5/dir6/dir7
 
 * download a directory `dir1/dir2`
 
-        python pybox/boxclient.py -Ubob -td -Pd dir1/dir2
+        python pybox/boxclient.py -Ubob -td -d dir1/dir2
 
 * compare a local directory `/Users/bob/dir1` with a remote directory `dir2/dir3`
 
-        python pybox/boxclient.py -Ubob -td -PC /Users/bob/dir1 dir2/dir3
+        python pybox/boxclient.py -Ubob -td -C /Users/bob/dir1 dir2/dir3
 
 * sync(push) a local directory `/Users/bob/dir1`(source) with a remote directory
   `dir2/dir3`(destination)
 
-        python pybox/boxclient.py -Ubob -P --push /Users/bob/dir1 dir2/dir3
+        python pybox/boxclient.py -Ubob -p /Users/bob/dir1 dir2/dir3
 
 * sync(pull) a remote directory `dir2/dir3`(source) with a local directory
   `/Users/bob/dir1`(destination)
 
-        python pybox/boxclient.py -Ubob -P --pull dir2/dir3 /Users/bob/dir1
+        python pybox/boxclient.py -Ubob -P dir2/dir3 /Users/bob/dir1
 
 
 REFERENCE

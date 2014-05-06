@@ -193,39 +193,6 @@ class DiffResult(object):
         return encode(unicode(self))
 
 
-def forgive_request(e):
-    """Give the failed request a retry"""
-    if isinstance(e, urllib2.HTTPError):
-        err = e.code
-        if err >= 500: # not client's fault, try our luck
-            return True
-        elif err == 401: # unauthorized, try to update tokens
-            return BoxApi.update_auth_token
-        elif err == 408: # time-out
-            return True
-        elif err == 429: # too many requests
-            return True
-        elif err == 403: # forbidden
-            return ForbiddenError()
-        elif err == 404: # not found
-            return FileNotFoundError()
-        elif err == 409: # file confliction
-            return FileConflictionError()
-        elif err == 405: # method not allowd
-            return MethodNotALLowedError()
-        elif err == 400: # bad request
-            return RequestError()
-    elif isinstance(e, urllib2.URLError):
-        #if isinstance(e.reason, socket.timeout):
-            #return True
-        if isinstance(e.reason, socket.error):
-            return True
-        else:
-            logger.error("non socket.error: {}".format(e))
-    elif isinstance(e, socket.error):
-        return True
-
-
 class BoxApi(object):
     """Box API"""
     BOX_URL = "box.com/2.0/"
@@ -244,6 +211,8 @@ class BoxApi(object):
 
     # patterns
     FILENAME_PATTERN = re.compile('(.*filename=")(.+)(".*)')
+    BAD_FILENAME_PATTERN = re.compile(r'/|\\')
+    NODE_ID_PATTERN = re.compile('0|[0-9]{5,20}$')
 
     def __init__(self):
         conf_file = os.path.expanduser(
@@ -291,6 +260,39 @@ class BoxApi(object):
                 response_obj['error'],
                 response_obj['error_description']))
         return response_obj
+
+    @staticmethod
+    def forgive_request(e):
+        """Give the failed request a retry"""
+        if isinstance(e, urllib2.HTTPError):
+            err = e.code
+            if err >= 500: # not client's fault, try our luck
+                return True
+            elif err == 401: # unauthorized, try to update tokens
+                return BoxApi.update_auth_token
+            elif err == 408: # time-out
+                return True
+            elif err == 429: # too many requests
+                return True
+            elif err == 403: # forbidden
+                return ForbiddenError()
+            elif err == 404: # not found
+                return FileNotFoundError()
+            elif err == 409: # file confliction
+                return FileConflictionError()
+            elif err == 405: # method not allowd
+                return MethodNotALLowedError()
+            elif err == 400: # bad request
+                return RequestError()
+        elif isinstance(e, urllib2.URLError):
+            #if isinstance(e.reason, socket.timeout):
+                #return True
+            if isinstance(e.reason, socket.error):
+                return True
+            else:
+                logger.error("non socket.error: {}".format(e))
+        elif isinstance(e, socket.error):
+            return True
 
     @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
     def _retryable_auth_request(self, url, data, headers, method):
@@ -472,7 +474,7 @@ class BoxApi(object):
 
         return self._request(self.BASE_URL + "users/me")
 
-    def list(self, folder_id=None, extra_params=None, by_name=False):
+    def list(self, folder_id=None, extra_params=None):
         """List files under the given folder.
 
         Refer: http://developers.box.com/docs/#folders-retrieve-a-folders-items
@@ -480,9 +482,9 @@ class BoxApi(object):
         ### TODO: if list item count > 1000, auto-paginate when necessary
         self._check()
 
-        if not folder_id:
+        if not folder_id or folder_id == '/':
             folder_id = self.ROOT_ID
-        elif by_name:
+        elif not self._is_id(folder_id):
             folder_id = self._convert_to_id(folder_id, False)
         extra_params = extra_params or {}
         limit = extra_params.get('limit', self.LIST_SIZE)
@@ -499,8 +501,13 @@ class BoxApi(object):
         params = urllib.urlencode({
             'limit': limit, 'offset': offset, 'fields': fields})
         url = "{}folders/{}/items?{}".format(
-                self.BASE_URL, encode(folder_id), params)
+                self.BASE_URL, folder_id, params)
         return self._request(url)
+
+    @classmethod
+    def _is_id(cls, remotename):
+        """Return if the remote name is an ID(instead of path)"""
+        return cls.NODE_ID_PATTERN.match(remotename)
 
     @staticmethod
     def _get_file_id(files, name, is_file):
@@ -527,7 +534,7 @@ class BoxApi(object):
             return self.ROOT_ID, False
 
         path = os.path.normpath(path)
-        paths = [p for p in path.split(os.sep) if p]
+        paths = [p for p in path.split("/") if p]
         folder_id = self.ROOT_ID
         for name in paths[:-1]:
             logger.debug(u"look up folder '{}' in {}".format(name, folder_id))
@@ -558,31 +565,35 @@ class BoxApi(object):
             raise ValueError("wrong file name")
         return file_id
 
-    def get_file_info(self, file_id, by_name=False):
-        """Get file's detailed information
+    def _is_file(self, file_id):
+        """Test if the given id is a file's id"""
+        url = "{}{}s/{}".format(self.BASE_URL, "file", file_id)
+        try:
+            self._request(url)
+            return True
+        except:
+            return False
+
+    def get_file_info(self, remotefile):
+        """Get the given remote file's detailed information
 
         Refer:
         http://developers.box.com/docs/#files-get
         """
         self._check()
 
-        if by_name:
+        file_id = remotefile
+        if not self._is_id(file_id):
             file_id = self._convert_to_id(file_id, True)
-        url = "{}{}s/{}".format(
-                self.BASE_URL, "file", encode(file_id))
+        url = "{}{}s/{}".format(self.BASE_URL, "file", file_id)
         try:
             return self._request(url)
-
         except FileNotFoundError:
             logger.error(u"cannot find a file with id: {}".format(file_id))
             raise
-        except MethodNotALLowedError:
-            if not file_id.isdigit():
-                raise ParameterError("id({}) is ill-formed".format(file_id))
-            raise
 
-    def get_folder_info(self, folder_id, by_name=False):
-        """Get folder's detailed information.
+    def get_folder_info(self, remotefile):
+        """Get the given remote folder's detailed information.
         Result is array type due to pagination
 
         Refer:
@@ -590,7 +601,8 @@ class BoxApi(object):
         """
         self._check()
 
-        if by_name:
+        folder_id = remotefile
+        if not self._is_id(folder_id):
             folder_id = self._convert_to_id(folder_id, False)
         try:
             results = []
@@ -600,7 +612,7 @@ class BoxApi(object):
                 params = urllib.urlencode(
                         {'limit': limit, 'offset': offset})
                 url = "{}{}s/{}?{}".format(
-                        self.BASE_URL, 'folder', encode(folder_id), params)
+                        self.BASE_URL, 'folder', folder_id, params)
                 result = self._request(url)
                 results.append(result)
                 children = result['item_collection']
@@ -614,62 +626,60 @@ class BoxApi(object):
         except FileNotFoundError:
             logger.error(u"cannot find a folder with id: {}".format(folder_id))
             raise
-        except MethodNotALLowedError:
-            if not folder_id.isdigit():
-                raise ParameterError("id({}) is ill-formed".format(folder_id))
-            raise
 
-    def mkdir(self, name, parent=None, by_name=False):
+    def mkdir(self, name, parent=None):
         """Create a directory if it does not exists.
         Raise `FileConflictionError` if it already exists.
 
         Refer: http://developers.box.com/docs/#folders-create-a-new-folder
         """
+        if self.BAD_FILENAME_PATTERN.search(name):
+            raise ValueError("illegal directory name: {}".format(name))
         self._check()
 
         if not parent:
             parent = self.ROOT_ID
-        elif by_name:
+        elif not self._is_id(parent):
             parent = self._convert_to_id(parent, False)
 
         url = "{}folders".format(self.BASE_URL)
-        data = {"parent": {"id": encode(parent)},
-                "name": encode(name)}
+        data = {"parent": {"id": parent}, "name": encode(name)}
         try:
             return self._request(url, json.dumps(data))
         except FileConflictionError as e:
             logger.warn(u"directory {} already exists".format(name))
-            e.args = (encode(name), parent)
+            e.args = (name, parent)
             raise
 
-    def mkdirs(self, name, parent=None, by_name=False):
+    def mkdirs(self, name, parent=None):
         """Create a directory if it does not exists and return its id.
         No error is raised even it's an already existing directory.
         """
         try:
-            return self.mkdir(name, parent, by_name)['id']
+            return self.mkdir(name, parent)['id']
         except FileConflictionError as e:
             name, parent = e.args
             return self._get_file_id(self.list(parent), name, False)
 
-    def rmdir(self, id_, recursive=False, by_name=False):
-        """Remove the given directory
+    def rmdir(self, remotefile, recursive=False):
+        """Remove the given remote directory
 
         Refer: http://developers.box.com/docs/#folders-delete-a-folder
         """
-        self._remove(False, id_, by_name, recursive)
+        self._remove(False, remotefile, recursive)
 
-    def remove(self, id_, by_name=False):
-        """Remove the given file
+    def remove(self, remotefile):
+        """Remove the given remote file
 
         Refer: http://developers.box.com/docs/#files-delete-a-file
         """
-        self._remove(True, id_, by_name)
+        self._remove(True, remotefile)
 
-    def _remove(self, is_file, id_, by_name, recursive=False):
+    def _remove(self, is_file, remotefile, recursive=False):
         self._check()
 
-        if by_name:
+        id_ = remotefile
+        if not self._is_id(id_):
             id_ = self._convert_to_id(id_, is_file)
         if is_file:
             type_ = "file"
@@ -689,38 +699,37 @@ class BoxApi(object):
                 logger.error(u"Probably the folder to be deleted({}) " \
                         "is nonempty, try recursive deletion".format(id_))
             raise
-        except MethodNotALLowedError:
-            if not id_.isdigit():
-                raise ParameterError("id({}) is ill-formed".format(id_))
-            raise
 
-    def rename_file(self, id_, new_name, by_name=False):
-        """Rename a file
+    def rename_file(self, remotefile, new_name):
+        """Rename the given remote file
 
         Refer:
         http://developers.box.com/docs/#files-update-a-files-information
         """
-        self._rename(True, id_, new_name, by_name)
+        self._rename(True, remotefile, new_name)
 
-    def rename_dir(self, id_, new_name, by_name=False):
-        """Rename a directory
+    def rename_dir(self, remotefile, new_name):
+        """Rename the given remote directory with the new name
 
         Refer:
         http://developers.box.com/docs/#folders-update-information-about-a-folder
         """
-        self._rename(False, id_, new_name, by_name)
+        self._rename(False, remotefile, new_name)
 
-    def _rename(self, is_file, id_, new_name, by_name):
+    def _rename(self, is_file, remotefile, new_name):
+        if self.BAD_FILENAME_PATTERN.search(new_name):
+            raise ValueError("illegal name: {}".format(new_name))
+
         try:
-            return self._update_info(is_file, id_,
-                    {"name": encode(new_name)}, by_name)
+            return self._update_info(is_file, remotefile,
+                    {"name": encode(new_name)})
         except FileConflictionError:
             logger.error(u"{} {} already exists".format(
                 "File" if is_file else "Folder", new_name))
             raise
 
-    def _update_info(self, is_file, id_, new_info, by_name):
-        """Update a file/directory's information
+    def _update_info(self, is_file, remotefile, new_info):
+        """Update the given remote file/directory's information
 
         Refer:
         http://developers.box.com/docs/#files-update-a-files-information
@@ -728,7 +737,8 @@ class BoxApi(object):
         """
         self._check()
 
-        if by_name:
+        id_ = remotefile
+        if not self._is_id(id_):
             id_ = self._convert_to_id(id_, is_file)
         if is_file:
             type_ = "file"
@@ -742,38 +752,50 @@ class BoxApi(object):
                 type_, id_))
             raise
 
-    def move_file(self, file_, new_folder, by_name=False):
-        """Move a file to another folder
+    def move_file(self, remotefile, new_folder):
+        """Move the given remote file to another folder
 
         Refer:
         http://developers.box.com/docs/#files-update-a-files-information
         """
-        self._move(True, file_, new_folder, by_name)
+        self._move(True, remotefile, new_folder)
 
-    def move_dir(self, folder, new_folder, by_name=False):
-        """Move a directory to another folder
+    def move_dir(self, remotefile, new_folder):
+        """Move the given remote directory to another folder
 
         Refer:
         http://developers.box.com/docs/#folders-update-information-about-a-folder
         """
-        self._move(False, folder, new_folder, by_name)
+        self._move(False, remotefile, new_folder)
 
-    def _move(self, is_file, target, new_folder, by_name):
-        if by_name:
+    def _move(self, is_file, target, new_folder):
+        if not self._is_id(new_folder):
             new_folder = self._convert_to_id(new_folder, False)
         try:
             return self._update_info(is_file, target,
-                    {"parent": {"id": encode(new_folder)}}, by_name)
+                    {"parent": {"id": new_folder}})
         except RequestError: # e.g. move to descendent
             logger.error(u"{} {} cannot move to {}".format(
                 "File" if is_file else "Folder", target, new_folder))
             raise
 
-    def download_dir(self, folder_id, localdir=None, by_name=False):
-        """Download the directory with the given id to a local directory"""
+    def download(self, remotefile, localdir=None):
+        """Download the file with the given id to a local directory"""
         self._check()
 
-        folder_info = self.get_folder_info(folder_id, by_name)
+        if self._is_id(remotefile):
+            id_, is_file = remotefile, self._is_file(remotefile)
+        else:
+            id_, is_file = self.get_file_id(remotefile)
+
+        if is_file:
+            self._download_file(id_, localdir)
+        else:
+            self._download_dir(id_, localdir)
+
+    def _download_dir(self, folder_id, localdir=None):
+        """Download the directory with the given id to a local directory"""
+        folder_info = self.get_folder_info(folder_id)
         folder_name = folder_info[0]['name']
         localdir = os.path.join(localdir or ".", folder_name)
         try:
@@ -798,24 +820,20 @@ class BoxApi(object):
                         logger.debug("same sha1")
                         continue
                 # download
-                self.download_file(file_id, localdir)
+                self._download_file(file_id, localdir)
             elif file_type == 'folder':
-                self.download_dir(file_id, localdir)
+                self._download_dir(file_id, localdir)
             else:
                 logger.warn(u"unexpected file type".format(file_type))
 
-    def download_file(self, file_id, localdir=None, by_name=False):
-        """Download the file with the given id to a local directory
+    def _download_file(self, file_id, localdir=None):
+        """Download the regular file with the given id to a local directory
 
         Refer:
         http://developers.box.com/docs/#files-download-a-file
         """
-        self._check()
-
-        if by_name:
-            file_id = self._convert_to_id(file_id, True)
         localdir = encode(localdir or ".")
-        url = self.DOWNLOAD_URL.format(encode(file_id))
+        url = self.DOWNLOAD_URL.format(file_id)
         self._do_download(localdir, url)
 
     @retry((urllib2.URLError, socket.error), forgive_request,
@@ -835,7 +853,7 @@ class BoxApi(object):
                     break
                 f.write(buf)
 
-    def upload(self, uploaded, parent=None, by_name=False, precheck=True):
+    def upload(self, uploaded, parent=None, precheck=True):
         """Upload the given file/directory to a remote directory.
         In case a file already exists on the server, upload will be skipped
         if two files have the same SHA1, otherwise a new version of the file
@@ -849,7 +867,7 @@ class BoxApi(object):
 
         if not parent:
             parent = self.ROOT_ID
-        elif by_name:
+        elif not self._is_id(parent):
             parent = self._convert_to_id(parent, False)
         uploaded = os.path.normpath(uploaded)
         if os.path.isfile(uploaded):
@@ -857,14 +875,14 @@ class BoxApi(object):
         elif os.path.isdir(uploaded):
             self._upload_dir(uploaded, parent, precheck)
         else:
-            logger.debug("ignore to upload {}".format(uploaded))
+            logger.warn("ignore to upload {}".format(uploaded))
 
     def _upload_dir(self, upload_dir, parent, precheck):
         upload_dir_id = self.mkdirs(os.path.basename(upload_dir), parent)
         assert upload_dir_id, "upload_dir_id should be present"
         for filename in os.listdir(upload_dir):
             path = os.path.join(upload_dir, filename)
-            self.upload(path, upload_dir_id, False, precheck)
+            self.upload(path, upload_dir_id, precheck)
 
     def _check_file_on_server(self, filepath, parent):
         """Check if the file already exists on the server
@@ -950,26 +968,27 @@ class BoxApi(object):
         datagen = DataWrapper(upload_file, datagen, headers)
         return self._request(url, datagen, headers, retryable=False)
 
-    def compare(self, localpath, remotefile, by_name=False):
+    def compare(self, localpath, remotefile):
+        """Compare files/directories between server and client(as per SHA1)"""
         if not os.path.exists(localpath):
             raise ValueError("local file '{}' doesn't exist".format(localpath))
         elif os.path.isdir(localpath):
-            return self._compare_dir(localpath, remotefile, by_name)
+            return self._compare_dir(localpath, remotefile)
         elif os.path.isfile(localpath):
-            return self._compare_file(localpath, remotefile, by_name)
+            return self._compare_file(localpath, remotefile)
         else:
-            raise ValueError("local path '{}' is neither a folder or a regular file".format(localpath))
+            raise ValueError("local path '{}' is neither a folder or " \
+                    "a regular file".format(localpath))
 
-    def _compare_file(self, localfile, remotefile, by_name=False):
+    def _compare_file(self, localfile, remotefile):
         """Compare files between server and client(as per SHA1)"""
         sha1 = get_sha1(localfile)
-        info = self.get_file_info(remotefile, by_name)
+        info = self.get_file_info(remotefile)
         return sha1 == info['sha1']
 
-    def _compare_dir(self, localdir, remotedir, by_name=False,
-            ignore_common=True):
+    def _compare_dir(self, localdir, remotedir, ignore_common=True):
         """Compare directories between server and client"""
-        remotedir = self.get_folder_info(remotedir, by_name)
+        remotedir = self.get_folder_info(remotedir)
         localdir = os.path.normpath(localdir)
         return self._do_compare_dir(localdir, remotedir,
                 DiffResult(localdir, remotedir[0], ignore_common))
@@ -1010,19 +1029,22 @@ class BoxApi(object):
         result.end_add()
         return result
 
-    def _client_only_files(self, result, localdir):
+    @staticmethod
+    def _client_only_files(result, localdir):
         for path, node in result.get_client_unique(True):
             yield True, os.path.join(localdir, path), node['id']
         for path, node in result.get_client_unique(False):
             yield False, os.path.join(localdir, path), node['id']
 
-    def _server_only_files(self, result):
+    @staticmethod
+    def _server_only_files(result):
         for path, node in result.get_server_unique(True):
             yield True, path, node['id']
         for path, node in result.get_server_unique(False):
             yield False, path, node['id']
 
-    def _diff_files(self, result, localdir):
+    @staticmethod
+    def _diff_files(result, localdir):
         diff_files = result.get_compare(True)
         for path, remote_node, context_node in diff_files:
             if localdir is None:
@@ -1040,7 +1062,8 @@ class BoxApi(object):
             else:
                 self.rmdir(id_, True)
 
-    def _delete_local(self, dry_run, is_file, path):
+    @staticmethod
+    def _delete_local(dry_run, is_file, path):
         logger.info(u"removing the local {} '{}'".format(
             "file" if is_file else "folder", path))
         if not dry_run:
@@ -1067,16 +1090,15 @@ class BoxApi(object):
             "" if is_new else "(new version)"))
         if not dry_run:
             if is_file:
-                self.download_file(id_, localdir)
+                self._download_file(id_, localdir)
             else:
-                self.download_dir(id_, localdir)
+                self._download_dir(id_, localdir)
 
-    def push(self, localdir, remotedir, dry_run=False, by_name=False,
-            ignore=None):
+    def push(self, localdir, remotedir, dry_run=False, ignore=None):
         """Sync directories between client(source) and server(destination)"""
         if dry_run:
             logger.info("push dry run...")
-        result = self._compare_dir(localdir, remotedir, by_name)
+        result = self._compare_dir(localdir, remotedir)
 
         for is_file, path, id_ in self._server_only_files(result):
             self._delete_remote(dry_run, is_file, path, id_)
@@ -1087,12 +1109,11 @@ class BoxApi(object):
         for path, id_, parent in self._diff_files(result, localdir):
             self._upload_path(dry_run, True, path, parent, id_)
 
-    def pull(self, remotedir, localdir, dry_run=False, by_name=False,
-            ignore=None):
+    def pull(self, remotedir, localdir, dry_run=False, ignore=None):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
-        result = self._compare_dir(localdir, remotedir, by_name)
+        result = self._compare_dir(localdir, remotedir)
 
         for is_file, path, _ in self._client_only_files(result, localdir):
             self._delete_local(dry_run, is_file, path)

@@ -64,13 +64,11 @@ def parse_args(argv):
             help="download file")
     parser.add_option("-u", "--upload", action="store_true", dest="upload",
             help="upload file")
-    parser.add_option("-P", "--plain-name", action="store_true", dest="plain",
-            help="use plain name instead of id")
     parser.add_option("-C", "--compare", action="store_true", dest="compare",
             help="compare local and remote directories")
-    parser.add_option("--push", action="store_true", dest="push",
+    parser.add_option("-p", "--push", action="store_true", dest="push",
             help="sync from local(source) to remote(destination) directories")
-    parser.add_option("--pull", action="store_true", dest="pull",
+    parser.add_option("-P", "--pull", action="store_true", dest="pull",
             help="sync from remote(source) to local(destination) directories")
     parser.add_option("-n", "--dry-run", action="store_true", dest="dry_run",
             help="show what would have been transferred when sync")
@@ -187,7 +185,7 @@ def get_action(client, parser, options, args):
         action = 'mkdir'
         extra_args.append(options.chdir)
     elif options.download:
-        action = 'download_dir' if target == "d" else 'download_file'
+        action = 'download'
         extra_args.append(options.chdir)
     elif options.upload:
         action = 'upload'
@@ -207,7 +205,6 @@ def get_action(client, parser, options, args):
         extra_args.append(options.dry_run)
     else:
         parser.error("too few options")
-    extra_args.append(options.plain)
 
     return (action, args, extra_args)
 
@@ -240,7 +237,7 @@ def main(argv=None):
         except Exception as e:
             errors += 1
             print "action {} on {} failed".format(action, stringify(arg))
-            sys.stderr.write("error: {}\n".format(e))
+            sys.stderr.write(u"error: {}\n".format(e))
             logger.exception(e)
     if errors > 0:
         sys.stderr.write("encountered {} error(s)\n".format(errors))

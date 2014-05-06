@@ -179,10 +179,18 @@ def retry(ForgivableExceptions, forgive=lambda x: True,
                 try:
                     return f(*args, **kwargs)
                 except ForgivableExceptions as e:
-                    forgiven = forgive(e) or e
+                    forgiven = None
+                    if callable(forgive):
+                        forgiven = forgive(e)
+                    elif len(args) and hasattr(forgive, '__get__'):
+                        # support staticmethod/classmethod
+                        forgiven = forgive.__get__(None, args[0])(e)
+                    else:
+                        assert False, "forgive should be a function"
+                    forgiven = forgiven or e
                     if isinstance(forgiven, BaseException):
                         if logger:
-                            logger.error("just give up: {}", e)
+                            logger.debug("just give up: {}".format(e))
                         raise forgiven
 
                     msg = "Error: {}. Retry in {} seconds...".format(
