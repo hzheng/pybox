@@ -27,7 +27,7 @@ from poster.streaminghttp import register_openers
 from mechanize._mechanize import FormNotFoundError
 
 from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
-        stringify, retry
+        stringify, unzip_stream, retry
 
 
 logger = get_logger()
@@ -242,15 +242,26 @@ class BoxApi(object):
         """Log response"""
         logger.debug("response: {}".format(stringify(response)))
 
-    @staticmethod
-    def _parse_response(response):
-        code = response.getcode()
-        if code == 204:
-            logger.info("no content")
+    def _parse_response(self, response):
+        """Parse response"""
+        if not response:
             return None
 
-        rsp_str = response.read()
+        if response.code == 204:
+            logger.debug("no content")
+            return ""
+
+        rsp_data = response
         try:
+            if response.headers['Content-Encoding'] == 'gzip':
+                rsp_data = unzip_stream(response)
+        except KeyError:
+            pass
+        if response.headers['Content-Type'] != 'application/json':
+            return rsp_data
+        # handle json data...
+        try:
+            rsp_str = rsp_data.read()
             response_obj = json.loads(rsp_str)
         except:
             raise StatusError("non-json response: {}".format(rsp_str))
@@ -259,6 +270,8 @@ class BoxApi(object):
             raise StatusError("{}({})".format(
                 response_obj['error'],
                 response_obj['error_description']))
+
+        self._log_response(response_obj)
         return response_obj
 
     @staticmethod
@@ -306,17 +319,21 @@ class BoxApi(object):
         req.add_header('Authorization', "Bearer {}".format(self._access_token))
         return urllib2.urlopen(req, timeout=60)
 
-    def _request(self, url, data=None, headers=None,
-            method=None, is_json=True, retryable=True):
+    @staticmethod
+    @retry(urllib2.URLError, forgive_request, tries=5, logger=logger)
+    def _noauth_request(url, params):
+        params = urllib.urlencode(params)
+        logger.debug(u"requesting {}?{} without auth...".format(url, params))
+        return urllib.urlopen(url, params)
+
+    def _request(self, url, data=None, headers=None, method=None,
+            compress=True, retryable=True):
         auth_req = ('_retryable' if retryable else '') + '_auth_request'
-        response = getattr(self, auth_req)(url, data, headers or {}, method)
-        if response:
-            if is_json:
-                info = self._parse_response(response)
-                self._log_response(info)
-                return info
-            else:
-                return response
+        headers = headers or {}
+        if compress:
+            headers['Accept-Encoding'] = "gzip, deflate"
+        response = getattr(self, auth_req)(url, data, headers, method)
+        return self._parse_response(response)
 
     def _check(self):
         assert self._access_token, "access token no found"
@@ -441,9 +458,7 @@ class BoxApi(object):
         else:
             params['grant_type'] = 'refresh_token'
             params['refresh_token'] = self._refresh_token
-        params = urllib.urlencode(params)
-        logger.debug("get_token params: {}".format(params))
-        response = urllib.urlopen(self.TOKEN_URL, params)
+        response = self._noauth_request(self.TOKEN_URL, params)
         rsp_obj = self._parse_response(response)
         self._access_token = rsp_obj['access_token']
         self._refresh_token = rsp_obj['refresh_token']
@@ -840,7 +855,7 @@ class BoxApi(object):
             tries=10, logger=logger)
     def _do_download(self, localdir, url):
         logger.debug("download url: {}".format(url))
-        stream = self._request(url, is_json=False, retryable=False)
+        stream = self._request(url, compress=False, retryable=False)
         meta = stream.info()
         name = self._get_filename(meta)
         size = int(meta.getheaders("Content-Length")[0])

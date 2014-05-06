@@ -16,6 +16,8 @@ import sys
 import re
 import time
 from functools import wraps
+import gzip
+import StringIO
 
 import ConfigParser
 import cookielib
@@ -148,6 +150,14 @@ def user_of_email(string):
     matched = EMAIL_REGEX.match(string)
     if matched:
         return matched.groups()[0]
+
+
+def unzip_stream(stream):
+    """Unzip the stream"""
+    sio = StringIO.StringIO()
+    sio.write(stream.read())
+    sio.seek(0)
+    return gzip.GzipFile(fileobj=sio, mode='rb')
 
 
 def retry(ForgivableExceptions, forgive=lambda x: True,
