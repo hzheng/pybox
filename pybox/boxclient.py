@@ -74,6 +74,8 @@ def parse_args(argv):
             help="show what would have been transferred when sync")
     parser.add_option("-f", "--from-file", dest="from_file",
             help="read arguments(separated by line break) from file")
+    parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
+            help="show more details")
     (options, args) = parser.parse_args(argv)
     if options.from_file:
         with open(options.from_file) as f:
@@ -187,6 +189,7 @@ def get_action(client, parser, options, args):
     elif options.download:
         action = 'download'
         extra_args.append(options.chdir)
+        extra_args.append(options.verbose)
     elif options.upload:
         action = 'upload'
         extra_args.append(options.chdir)
@@ -203,6 +206,8 @@ def get_action(client, parser, options, args):
         # pair the arguments
         args = zip(args[::2], args[1::2])
         extra_args.append(options.dry_run)
+        if options.pull:
+            extra_args.append(options.verbose)
     else:
         parser.error("too few options")
 
@@ -232,11 +237,13 @@ def main(argv=None):
             else:
                 result = operate(*(list(arg) + extra_args))
             if result is not None:
-                print stringify(result)
-            print "action {} on {} succeeded".format(action, stringify(arg))
+                sys.stdout.write("{}\n".format(stringify(result)))
+            sys.stdout.write("action {} on {} succeeded\n".format(
+                action, stringify(arg)))
         except Exception as e:
             errors += 1
-            print "action {} on {} failed".format(action, stringify(arg))
+            sys.stdout.write("action {} on {} failed\n".format(
+                action, stringify(arg)))
             sys.stderr.write(u"error: {}\n".format(e))
             logger.exception(e)
     if errors > 0:

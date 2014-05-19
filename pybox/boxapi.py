@@ -16,6 +16,7 @@ import errno
 import json
 import os
 import re
+import sys
 from datetime import datetime
 import shutil
 import socket
@@ -794,7 +795,7 @@ class BoxApi(object):
                 "File" if is_file else "Folder", target, new_folder))
             raise
 
-    def download(self, remotefile, localdir=None):
+    def download(self, remotefile, localdir=None, verbose=False):
         """Download the file with the given id to a local directory"""
         self._check()
 
@@ -804,11 +805,11 @@ class BoxApi(object):
             id_, is_file = self.get_file_id(remotefile)
 
         if is_file:
-            self._download_file(id_, localdir)
+            self._download_file(id_, localdir, verbose)
         else:
-            self._download_dir(id_, localdir)
+            self._download_dir(id_, localdir, verbose)
 
-    def _download_dir(self, folder_id, localdir=None):
+    def _download_dir(self, folder_id, localdir=None, verbose=False):
         """Download the directory with the given id to a local directory"""
         folder_info = self.get_folder_info(folder_id)
         folder_name = folder_info[0]['name']
@@ -835,13 +836,13 @@ class BoxApi(object):
                         logger.debug("same sha1")
                         continue
                 # download
-                self._download_file(file_id, localdir)
+                self._download_file(file_id, localdir, verbose)
             elif file_type == 'folder':
-                self._download_dir(file_id, localdir)
+                self._download_dir(file_id, localdir, verbose)
             else:
                 logger.warn(u"unexpected file type".format(file_type))
 
-    def _download_file(self, file_id, localdir=None):
+    def _download_file(self, file_id, localdir=None, verbose=False):
         """Download the regular file with the given id to a local directory
 
         Refer:
@@ -849,24 +850,38 @@ class BoxApi(object):
         """
         localdir = encode(localdir or ".")
         url = self.DOWNLOAD_URL.format(file_id)
-        self._do_download(localdir, url)
+        self._do_download(localdir, url, verbose)
 
     @retry((urllib2.URLError, socket.error), forgive_request,
             tries=10, logger=logger)
-    def _do_download(self, localdir, url):
+    def _do_download(self, localdir, url, verbose):
         logger.debug("download url: {}".format(url))
         stream = self._request(url, compress=False, retryable=False)
         meta = stream.info()
         name = self._get_filename(meta)
         size = int(meta.getheaders("Content-Length")[0])
         logger.debug("filename: {} with size: {}".format(name, size))
+
         BLOCK_SIZE = 65536
+        written = 0.0
+        progress_chars = ['-', '\\', '|', '/']
+        loop = 0
         with open(os.path.join(localdir, name), 'wb') as f:
             while True:
                 buf = stream.read(BLOCK_SIZE)
                 if not buf:
+                    if verbose:
+                        sys.stdout.write("\rdownloaded {}{}\n".format(
+                            name, ' ' * 10))
                     break
                 f.write(buf)
+                if verbose:
+                    written += len(buf)
+                    percent = int((written / size) * 100)
+                    sys.stdout.write("\rdownloading {}...{} {}%".format(
+                        name, progress_chars[loop % 4], percent))
+                    loop += 1
+                    sys.stdout.flush()
 
     def upload(self, uploaded, parent=None, precheck=True):
         """Upload the given file/directory to a remote directory.
@@ -885,12 +900,16 @@ class BoxApi(object):
         elif not self._is_id(parent):
             parent = self._convert_to_id(parent, False)
         uploaded = os.path.normpath(uploaded)
-        if os.path.isfile(uploaded):
-            self._upload_file(uploaded, parent, precheck)
-        elif os.path.isdir(uploaded):
-            self._upload_dir(uploaded, parent, precheck)
-        else:
-            logger.warn("ignore to upload {}".format(uploaded))
+        try:
+            if os.path.isfile(uploaded):
+                self._upload_file(uploaded, parent, precheck)
+            elif os.path.isdir(uploaded):
+                self._upload_dir(uploaded, parent, precheck)
+            else:
+                logger.warn(u"ignore to upload {}" \
+                        "(neither a file nor a folder)".format(uploaded))
+        except (IOError, OSError) as e:
+            logger.warn(u"ignore to upload {}({})".format(uploaded, e))
 
     def _upload_dir(self, upload_dir, parent, precheck):
         upload_dir_id = self.mkdirs(os.path.basename(upload_dir), parent)
@@ -1098,16 +1117,16 @@ class BoxApi(object):
             self.upload(path, parent, precheck=precheck)
 
     def _download_path(self, dry_run, is_file, path, id_, localdir,
-            is_new=True):
+            is_new=True, verbose=False):
         localdir = os.path.join(localdir, os.path.dirname(path))
         logger.info(u"downloading the {} '{}'(id={}) to {}{}".format(
             "file" if is_file else "folder", path, id_, localdir,
             "" if is_new else "(new version)"))
         if not dry_run:
             if is_file:
-                self._download_file(id_, localdir)
+                self._download_file(id_, localdir, verbose)
             else:
-                self._download_dir(id_, localdir)
+                self._download_dir(id_, localdir, verbose)
 
     def push(self, localdir, remotedir, dry_run=False, ignore=None):
         """Sync directories between client(source) and server(destination)"""
@@ -1124,7 +1143,7 @@ class BoxApi(object):
         for path, id_, parent in self._diff_files(result, localdir):
             self._upload_path(dry_run, True, path, parent, id_)
 
-    def pull(self, remotedir, localdir, dry_run=False, ignore=None):
+    def pull(self, remotedir, localdir, dry_run=False, verbose=False, ignore=None):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
@@ -1134,7 +1153,9 @@ class BoxApi(object):
             self._delete_local(dry_run, is_file, path)
 
         for is_file, path, id_ in self._server_only_files(result):
-            self._download_path(dry_run, is_file, path, id_, localdir)
+            self._download_path(dry_run, is_file, path, id_, localdir,
+                    verbose=verbose)
 
         for path, id_ in self._diff_files(result, None):
-            self._download_path(dry_run, True, path, id_, localdir, False)
+            self._download_path(dry_run, True, path, id_, localdir,
+                    is_new=False, verbose=verbose)
