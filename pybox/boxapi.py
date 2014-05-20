@@ -232,7 +232,10 @@ class BoxApi(object):
         except ConfigParser.NoSectionError as e:
             raise ConfigError("{} (in configuration file {})"
                     .format(e, conf_file))
-
+        try:
+            self._redirect_uri = conf_parser.get("app", "redirect_uri")
+        except ConfigParser.NoOptionError:
+            self._redirect_uri = "http://localhost"
         self._access_token = None
         self._refresh_token = None
         self._token_time = None
@@ -382,7 +385,7 @@ class BoxApi(object):
         params = urllib.urlencode({
                    'response_type': "code",
                    'client_id': self._client_id,
-                   'redirect_uri': "http://localhost",
+                   'redirect_uri': self._redirect_uri,
                    'state': security_token})
         url = self.AUTH_URL + "?" + params
         logger.debug("browsing auth url: {}".format(url))
@@ -1143,7 +1146,8 @@ class BoxApi(object):
         for path, id_, parent in self._diff_files(result, localdir):
             self._upload_path(dry_run, True, path, parent, id_)
 
-    def pull(self, remotedir, localdir, dry_run=False, verbose=False, ignore=None):
+    def pull(self, remotedir, localdir, dry_run=False,
+            verbose=False, ignore=None):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
