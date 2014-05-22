@@ -172,11 +172,11 @@ sure to prepend it with '/' to avoid confusion.
 
 * download a directory `dir1/dir2`
 
-        python pybox/boxclient.py -Ubob -td -d dir1/dir2
+        python pybox/boxclient.py -Ubob -d dir1/dir2
 
 * compare a local directory `/Users/bob/dir1` with a remote directory `dir2/dir3`
 
-        python pybox/boxclient.py -Ubob -td -C /Users/bob/dir1 dir2/dir3
+        python pybox/boxclient.py -Ubob -C /Users/bob/dir1 dir2/dir3
 
 * sync(push) a local directory `/Users/bob/dir1`(source) with a remote directory
   `dir2/dir3`(destination)

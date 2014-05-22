@@ -74,6 +74,8 @@ def parse_args(argv):
             help="show what would have been transferred when sync")
     parser.add_option("-f", "--from-file", dest="from_file",
             help="read arguments(separated by line break) from file")
+    parser.add_option("-x", "--exclude", dest="exclude",
+            help="exclude files whose names match the given regex")
     parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
             help="show more details")
     (options, args) = parser.parse_args(argv)
@@ -189,10 +191,12 @@ def get_action(client, parser, options, args):
     elif options.download:
         action = 'download'
         extra_args.append(options.chdir)
+        extra_args.append(options.exclude)
         extra_args.append(options.verbose)
     elif options.upload:
         action = 'upload'
         extra_args.append(options.chdir)
+        extra_args.append(options.exclude)
     elif options.compare:
         if len(args) % 2:
             parser.error("compare's arguments must be even numbers")
@@ -206,6 +210,7 @@ def get_action(client, parser, options, args):
         # pair the arguments
         args = zip(args[::2], args[1::2])
         extra_args.append(options.dry_run)
+        extra_args.append(options.exclude)
         if options.pull:
             extra_args.append(options.verbose)
     else:
@@ -244,8 +249,7 @@ def main(argv=None):
             errors += 1
             sys.stdout.write("action {} on {} failed\n".format(
                 action, stringify(arg)))
-            sys.stderr.write(u"error: {}\n".format(e))
-            logger.exception(e)
+            logger.exception(u"error: {}\n".format(e))
     if errors > 0:
         sys.stderr.write("encountered {} error(s)\n".format(errors))
         return 1
