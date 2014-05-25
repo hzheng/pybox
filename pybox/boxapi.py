@@ -687,7 +687,8 @@ class BoxApi(object):
             return results
         except FileNotFoundError:
             if raise_error:
-                logger.error(u"cannot find a folder with id: {}".format(folder_id))
+                logger.error(u"cannot find a folder with id: {}".format(
+                    folder_id))
                 raise
 
     def get_info_by_id(self, file_id, is_file=None, raise_error=True):
@@ -714,6 +715,15 @@ class BoxApi(object):
             msg = u"cannot find a {} with id: {}".format(file_type, file_id)
             logger.error(msg)
             raise ValueError(msg)
+
+    def get_info(self, remotefile, is_file=None):
+        """Return the remote file's info for the given path or id"""
+        if not remotefile or remotefile == "/" or remotefile == self.ROOT_ID:
+            return self.get_info_by_id(self.ROOT_ID, False)
+        elif self._is_id(remotefile):
+            return self.get_info_by_id(remotefile, is_file)
+        else:
+            return self.get_info_by_path(remotefile, is_file)
 
     def mkdir(self, name, parent=None):
         """Create a directory if it does not exists.
@@ -873,22 +883,17 @@ class BoxApi(object):
         self._check()
 
         localdir = localdir or "."
-        full_info = True
-        if not remotefile or remotefile == "/" or remotefile == self.ROOT_ID:
-            info = self.get_info_by_id(self.ROOT_ID, False)
-        elif self._is_id(remotefile):
-            info = self.get_info_by_id(remotefile)
-        else:
-            info = self.get_info_by_path(remotefile)
-            full_info = False
+        info = self.get_info(remotefile)
         if 'sha1' in info:
             file_data = (info['id'], info['name'], info['sha1'])
             self._download_file(file_data, localdir, verbose, ignore=ignore)
         else:
-            if full_info:
+            if type(info) is list:
                 folder_data = info
-            else:
+            elif type(info) is dict:
                 folder_data = (info['id'], info['name'])
+            else:
+                assert False, "unexpected info type: {}".format(type(info))
             self._download_dir(folder_data, localdir, ignore, verbose)
 
     @suppress_exception(FileNotFoundError, report_download_missing,
