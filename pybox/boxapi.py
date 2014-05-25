@@ -28,7 +28,7 @@ from poster.streaminghttp import register_openers
 from mechanize._mechanize import FormNotFoundError
 
 from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
-        stringify, unzip_stream, retry
+        stringify, unzip_stream, retry, ignored, suppress_exception
 
 
 logger = get_logger()
@@ -257,11 +257,9 @@ class BoxApi(object):
             return ""
 
         rsp_data = response
-        try:
+        with ignored(KeyError):
             if response.headers['Content-Encoding'] == 'gzip':
                 rsp_data = unzip_stream(response)
-        except KeyError:
-            pass
         if response.headers['Content-Type'] != 'application/json':
             return rsp_data
         # handle json data...
@@ -311,6 +309,18 @@ class BoxApi(object):
                 logger.error("non socket.error: {}".format(e))
         elif isinstance(e, socket.error):
             return True
+
+    @staticmethod
+    def report_download_missing(values):
+        key = values.keys()[0]
+        file_type = key.split("_")[0]
+        logger.warn(u"{} '{}' to be downloaded is missing".format(
+            file_type, values[key]))
+
+    @staticmethod
+    def report_upload_missing(values):
+        logger.warn(u"cannot upload {uploaded} due to missing destination " \
+                "directory(id={parent})".format(**values))
 
     @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
     def _retryable_auth_request(self, url, data, headers, method):
@@ -549,8 +559,8 @@ class BoxApi(object):
         if info:
             return info['id']
 
-    def get_file_attrs(self, path, is_file=None):
-        """Return the file's attributes for the given server path.
+    def get_info_by_path(self, path, is_file=None, raise_error=True):
+        """Return the file's info for the given server path.
 
         If is_file is True, check only file type,
         if is_file is False, check only folder type,
@@ -559,25 +569,43 @@ class BoxApi(object):
         path = os.path.normpath(path or "/")
         paths = [p for p in path.split("/") if p]
         folder_id = self.ROOT_ID
+        # check parents
         for name in paths[:-1]:
             logger.debug(u"look up folder '{}' in {}".format(name, folder_id))
             files = self.list(folder_id)
             folder_id = self._get_file_id(files, name, False)
             if not folder_id:
-                logger.debug(u"cannot find {} under folder {}".
-                        format(name, folder_id))
-                return None, None
+                msg = u"cannot find {} under folder with id: {}".format(
+                        name, folder_id)
+                if raise_error:
+                    logger.error(msg)
+                    raise ValueError(msg)
+                else:
+                    logger.warn(msg)
+                    return
+
         # time to check name
         name = paths[-1]
         logger.debug(u"checking name: {}".format(name))
         files = self.list(folder_id)
-        if not is_file:
-            attrs = self._get_file_attrs(files, name, False)
-            if attrs:
-                return attrs
+        info = None
+        if not is_file: # check folder type
+            info = self._get_file_attrs(files, name, False)
+            if info:
+                return info
 
-        if is_file is None or is_file:
-            return self._get_file_attrs(files, name, True)
+        if is_file is None or is_file: # check file type
+            info = self._get_file_attrs(files, name, True)
+        if info:
+            return info
+
+        if raise_error:
+            file_type = "file or folder"
+            if is_file is not None:
+                file_type = "file" if is_file else "folder"
+            msg = u"cannot find a {} at path: {}".format(file_type, path)
+            logger.error(msg)
+            raise ValueError(msg)
 
     def get_file_id(self, path, is_file=None):
         """Return the file's id and type for the given server path.
@@ -587,12 +615,9 @@ class BoxApi(object):
         """
         if not path or path == "/":
             return self.ROOT_ID, False
-        try:
-            attrs = self.get_file_attrs(path, is_file)
+        else:
+            attrs = self.get_info_by_path(path, is_file)
             return attrs['id'], attrs['type'] == 'file'
-        except:
-            logger.error(u"cannot find id for {}".format(path))
-            raise ValueError("wrong file name")
 
     def _convert_to_id(self, name, is_file):
             return self.get_file_id(name, is_file)[0]
@@ -607,7 +632,7 @@ class BoxApi(object):
             return False
 
     @staticmethod
-    def ignore_path(ignore, path):
+    def _ignore_path(ignore, path):
         return ignore and re.search(ignore, os.path.basename(path))
 
     def get_file_info(self, remotefile, raise_error=True):
@@ -629,7 +654,7 @@ class BoxApi(object):
                 logger.error(u"cannot find a file with id: {}".format(file_id))
                 raise
 
-    def get_folder_info(self, remotefile):
+    def get_folder_info(self, remotefile, raise_error=True):
         """Get the given remote folder's detailed information.
         Result is array type due to pagination
 
@@ -661,8 +686,34 @@ class BoxApi(object):
                     break
             return results
         except FileNotFoundError:
-            logger.error(u"cannot find a folder with id: {}".format(folder_id))
-            raise
+            if raise_error:
+                logger.error(u"cannot find a folder with id: {}".format(folder_id))
+                raise
+
+    def get_info_by_id(self, file_id, is_file=None, raise_error=True):
+        """Return the file's info for the given file id.
+
+        If is_file is True, check only file type,
+        if is_file is False, check only folder type,
+        if is_file is None, check both file and folder type.
+        """
+        if is_file is not False: # check file type
+            info = self.get_file_info(file_id, False)
+            if info:
+                return info
+
+        if not is_file: # check folder type
+            info = self.get_folder_info(file_id, False)
+        if info:
+            return info
+
+        if raise_error:
+            file_type = "file or folder"
+            if is_file is not None:
+                file_type = "file" if is_file else "folder"
+            msg = u"cannot find a {} with id: {}".format(file_type, file_id)
+            logger.error(msg)
+            raise ValueError(msg)
 
     def mkdir(self, name, parent=None):
         """Create a directory if it does not exists.
@@ -822,27 +873,36 @@ class BoxApi(object):
         self._check()
 
         localdir = localdir or "."
-        id_ = remotefile
+        full_info = True
         if not remotefile or remotefile == "/" or remotefile == self.ROOT_ID:
-            id_ = self.ROOT_ID
-            file_attrs = None
+            info = self.get_info_by_id(self.ROOT_ID, False)
         elif self._is_id(remotefile):
-            file_attrs = self.get_file_info(remotefile, False)
+            info = self.get_info_by_id(remotefile)
         else:
-            file_attrs = self.get_file_attrs(remotefile)
-            id_ = file_attrs['id']
-
-        if file_attrs and file_attrs['type'] == 'file':
-            self._download_file(id_, localdir, verbose,
-                    file_attrs=file_attrs, ignore=ignore)
+            info = self.get_info_by_path(remotefile)
+            full_info = False
+        if 'sha1' in info:
+            file_data = (info['id'], info['name'], info['sha1'])
+            self._download_file(file_data, localdir, verbose, ignore=ignore)
         else:
-            self._download_dir(id_, localdir, ignore, verbose)
+            if full_info:
+                folder_data = info
+            else:
+                folder_data = (info['id'], info['name'])
+            self._download_dir(folder_data, localdir, ignore, verbose)
 
-    def _download_dir(self, folder_id, localdir, ignore, verbose):
+    @suppress_exception(FileNotFoundError, report_download_missing,
+            "folder_name")
+    def _download_dir(self, folder_data, localdir, ignore, verbose):
         """Download the directory with the given id to a local directory"""
-        folder_info = self.get_folder_info(folder_id)
-        folder_name = folder_info[0]['name']
-        if self.ignore_path(ignore, folder_name):
+        if type(folder_data) is tuple:
+            folder_id, folder_name = folder_data
+            folder_info = self.get_folder_info(folder_id)
+        else:
+            folder_info = folder_data
+            folder_id = folder_info[0]['id']
+            folder_name = folder_info[0]['name']
+        if self._ignore_path(ignore, folder_name):
             logger.info(u"skip downloading the folder: {}".format(folder_name))
             return
 
@@ -853,42 +913,47 @@ class BoxApi(object):
             if e.errno != errno.EEXIST:
                 raise
 
+        # logger.info if verbose, otherwise debug?
+        logger.info(u"downloading the folder '{}'(id={}) to {}".format(
+            folder_name, folder_id, localdir))
         files = (entry for entries in
                 (i['item_collection']['entries'] for i in folder_info)
                 for entry in entries)
         for f in files:
-            file_type = f['type']
-            file_id = f['id']
+            file_type, file_id, file_name = f['type'], f['id'], f['name']
             if file_type == 'file':
-                self._download_file(file_id, localdir, verbose,
-                        file_attrs=f, ignore=ignore)
+                self._download_file((file_id, file_name, f['sha1']),
+                        localdir, verbose, ignore=ignore)
             elif file_type == 'folder':
-                self._download_dir(file_id, localdir, ignore, verbose)
+                self._download_dir((file_id, file_name),
+                        localdir, ignore, verbose)
             else:
                 logger.warn(u"unexpected file type".format(file_type))
 
-    def _download_file(self, file_id, localdir, verbose,
-            file_attrs=None, ignore=None):
+    @suppress_exception(FileNotFoundError, report_download_missing,
+            "file_name")
+    def _download_file(self, file_data, localdir, verbose, ignore=None):
         """Download the regular file with the given id to a local directory
 
         Refer:
         http://developers.box.com/docs/#files-download-a-file
         """
-        if file_attrs:
-            file_name = file_attrs['name']
-            if self.ignore_path(ignore, file_name):
-                logger.info(u"skip downloading the file: {}".format(file_name))
-                return
-            localfile = os.path.join(localdir, file_name)
-            if self._precheck and os.path.exists(localfile):
-                if get_sha1(localfile) == file_attrs['sha1']:
-                    logger.info(u"skip downloading the file: {}" \
-                            "(same sha1)".format(file_name))
-                    return
+        file_id, file_name, file_sha1 = file_data
+        if self._ignore_path(ignore, file_name):
+            logger.info(u"skip downloading the file: {}".format(file_name))
+            return
 
-        localdir = encode(localdir)
-        url = self.DOWNLOAD_URL.format(file_id)
-        self._do_download(localdir, url, verbose)
+        if file_sha1 and self._precheck:
+            localfile = os.path.join(localdir, file_name)
+            if os.path.exists(localfile) and get_sha1(localfile) == file_sha1:
+                logger.info(u"skip downloading the file: {}" \
+                        "(same sha1)".format(file_name))
+                return
+
+        logger.info(u"downloading the file '{}'(id={}) to {}".format(
+            file_name, file_id, localdir))
+        self._do_download(encode(localdir), self.DOWNLOAD_URL.format(file_id),
+                verbose)
 
     @retry((urllib2.URLError, socket.error), forgive_request,
             tries=10, logger=logger)
@@ -921,6 +986,8 @@ class BoxApi(object):
                     loop += 1
                     sys.stdout.flush()
 
+    @suppress_exception(FileNotFoundError, report_upload_missing,
+            "uploaded,parent")
     def upload(self, uploaded, parent=None, ignore=None, remote_id=None):
         """Upload the given file/directory to a remote directory.
         In case a file already exists on the server, upload will be skipped
@@ -950,7 +1017,7 @@ class BoxApi(object):
             logger.warn(u"ignore to upload {}({})".format(uploaded, e))
 
     def _upload_dir(self, upload_dir, parent, ignore):
-        if self.ignore_path(ignore, upload_dir):
+        if self._ignore_path(ignore, upload_dir):
             logger.info(u"skip uploading the folder: {}".format(upload_dir))
             return
 
@@ -987,7 +1054,7 @@ class BoxApi(object):
                 .format(filename, parent))
 
     def _upload_file(self, upload_file, parent, ignore, remote_id):
-        if self.ignore_path(ignore, upload_file):
+        if self._ignore_path(ignore, upload_file):
             logger.info(u"skip uploading the file: {}".format(upload_file))
             return
 
@@ -1156,7 +1223,7 @@ class BoxApi(object):
         'is_file': False if it's a folder, True if it's a new file,
                    a remote id if it's an old version file
         """
-        if self.ignore_path(ignore, path):
+        if self._ignore_path(ignore, path):
             logger.info(u"skip uploading {}: {}".format(
                 "file" if is_file else "folder", path))
             return
@@ -1175,7 +1242,7 @@ class BoxApi(object):
 
     def _download_path(self, dry_run, is_file, path, id_, localdir,
             is_new, ignore, verbose):
-        if self.ignore_path(ignore, path):
+        if self._ignore_path(ignore, path):
             logger.info(u"skip downloading {}: {}".format(
                 "file" if is_file else "folder", path))
             return
@@ -1186,9 +1253,9 @@ class BoxApi(object):
             "" if is_new else "(new version)"))
         if not dry_run:
             if is_file:
-                self._download_file(id_, localdir, verbose)
+                self._download_file((id_, path, None), localdir, verbose)
             else:
-                self._download_dir(id_, localdir, ignore, verbose)
+                self._download_dir((id_, path), localdir, ignore, verbose)
 
     def push(self, localdir, remotedir, dry_run=False, ignore=None):
         """Sync directories between client(source) and server(destination)"""

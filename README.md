@@ -103,6 +103,10 @@ All supported options are listed as follows:
 
 * _-f, --from-file_ read arguments from file(arguments separated by line break)
 
+* _-x, --exclude_ exclude files whose names match the given regex
+
+* _-v, --verbose_ show more details
+
 EXAMPLES
 --------
 
@@ -145,6 +149,10 @@ sure to prepend it with '/' to avoid confusion.
 
         python pybox/boxclient.py -Ubob -c path1/path2 -u file4
 
+* upload directory `dir`(excluding all dot files) to root directory
+
+        python pybox/boxclient.py -Ubob -u dir -x '^\.'
+
 * remove a file whose id is `1005181453`
 
         python pybox/boxclient.py -Ubob -R 1005181453
@@ -170,9 +178,9 @@ sure to prepend it with '/' to avoid confusion.
 
         python pybox/boxclient.py -Ubob -td -m dir1 dir2 dir3/dir4 dir5/dir6/dir7
 
-* download a directory `dir1/dir2`
+* download a directory `dir1/dir2`(verbosely)
 
-        python pybox/boxclient.py -Ubob -d dir1/dir2
+        python pybox/boxclient.py -Ubob -d dir1/dir2 -v
 
 * compare a local directory `/Users/bob/dir1` with a remote directory `dir2/dir3`
 

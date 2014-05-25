@@ -11,6 +11,7 @@ __license__ = "MIT <http://www.opensource.org/licenses/mit-license.php>"
 __version__ = "0.1"
 __email__ = "xyzdll[AT]gmail[DOT]com"
 
+import inspect
 import os
 import sys
 import re
@@ -18,6 +19,7 @@ import time
 from functools import wraps
 import gzip
 import StringIO
+from contextlib import contextmanager
 
 import ConfigParser
 import cookielib
@@ -160,10 +162,23 @@ def unzip_stream(stream):
     return gzip.GzipFile(fileobj=sio, mode='rb')
 
 
-def retry(ForgivableExceptions, forgive=lambda x: True,
+def apply_function(f, *args, **kwargs):
+    """ Apply a function or staticmethod/classmethod to the given arguments.
+    """
+    if callable(f):
+        return f(*args, **kwargs)
+    elif len(args) and hasattr(f, '__get__'):
+        # support staticmethod/classmethod
+        return f.__get__(None, args[0])(*args, **kwargs)
+    else:
+        assert False, "expected a function or staticmethod/classmethod"
+
+
+def retry(forgivable_exceptions, forgive=lambda x: True,
         tries=5, delay=5, backoff=2, logger=None):
     """Retry decorator with exponential backoff.
-    `ForgivableExceptions` is a type of Exception(or Exception tuple)
+
+    `forgivable_exceptions` is a type of Exception(or Exception tuple)
     `forgive` is a function which takes the caught exception as its argument,
     the meaning of its return value is as follows:
     a negative object(e.g. `False`, `None`) means the old exception will be
@@ -177,27 +192,19 @@ def retry(ForgivableExceptions, forgive=lambda x: True,
     http://www.saltycrane.com/blog/2009/11/trying-out-retry-decorator-python/
     """
 
-    def deco_retry(f):
+    def decorator(f):
 
         if tries < 1:
             raise ValueError("tries must be at least 1")
 
         @wraps(f)
-        def f_retry(*args, **kwargs):
+        def wrapper(*args, **kwargs):
             mtries, mdelay = tries, delay
             while mtries > 1:
                 try:
                     return f(*args, **kwargs)
-                except ForgivableExceptions as e:
-                    forgiven = None
-                    if callable(forgive):
-                        forgiven = forgive(e)
-                    elif len(args) and hasattr(forgive, '__get__'):
-                        # support staticmethod/classmethod
-                        forgiven = forgive.__get__(None, args[0])(e)
-                    else:
-                        assert False, "forgive should be a function"
-                    forgiven = forgiven or e
+                except forgivable_exceptions as e:
+                    forgiven = apply_function(forgive, e) or e
                     if isinstance(forgiven, BaseException):
                         if logger:
                             logger.debug("just give up: {}".format(e))
@@ -216,6 +223,59 @@ def retry(ForgivableExceptions, forgive=lambda x: True,
                         forgiven(args[0] if len(args) else None)
             return f(*args, **kwargs) # last chance
 
-        return f_retry
+        return wrapper
 
-    return deco_retry
+    return decorator
+
+
+@contextmanager
+def ignored(*exceptions):
+    """Ignore the given exceptions"""
+    try:
+        yield
+    except exceptions:
+        pass
+
+
+def suppress_exception(handled_exceptions, handler=None,
+        var_names=None, *xargs, **xkwargs):
+    """Suppress the given exception(s)
+
+    `handler` the function which will be called if provided
+    `var_names` the local variables' names(separated by comma) whose name-value
+                dictionary will be passed to `handler`
+    `xargs` extra argument list which will be passed to `handler`
+    `xkwargs` extra argument dict which will be passed to `handler`
+    """
+
+    def decorator(f):
+
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except handled_exceptions:
+                if not handler:
+                    return
+
+                if not var_names:
+                    return handler()
+
+                frames = inspect.getinnerframes(sys.exc_info()[2])
+                values = {}
+                names = var_names.split(",")
+                for frame in reversed(frames):
+                    f_locals = frame[0].f_locals
+                    for name in names[:]:
+                        if name in f_locals:
+                            values[name] = f_locals[name]
+                            names.remove(name)
+                    if len(names) == 0:
+                        break
+                else:
+                    assert False, "local variable(s) '{}' not found".format(
+                            ",".join(names))
+                return apply_function(handler, values, *xargs, **xkwargs)
+        return wrapper
+
+    return decorator
