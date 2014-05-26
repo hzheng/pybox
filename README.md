@@ -101,11 +101,16 @@ All supported options are listed as follows:
 
 * _-n, --dry-run_ show what would have been transferred when sync
 
-* _-f, --from-file_ read arguments from file(arguments separated by line break)
+* _-D, --delete_ delete extraneous files from destination
 
 * _-x, --exclude_ exclude files whose names match the given regex
 
+* _-X, --exclude-remote_ exclude remote files whose names match the given regex
+                         (used in compare)
+
 * _-v, --verbose_ show more details
+
+* _-f, --from-file_ read arguments from file(arguments separated by line break)
 
 EXAMPLES
 --------
@@ -189,7 +194,7 @@ sure to prepend it with '/' to avoid confusion.
 * sync(push) a local directory `/Users/bob/dir1`(source) with a remote directory
   `dir2/dir3`(destination)
 
-        python pybox/boxclient.py -Ubob -p /Users/bob/dir1 dir2/dir3
+        python pybox/boxclient.py -Ubob -p /Users/bob/dir1 dir2/dir3 -D
 
 * sync(pull) a remote directory `dir2/dir3`(source) with a local directory
   `/Users/bob/dir1`(destination)

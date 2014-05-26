@@ -1118,13 +1118,13 @@ class BoxApi(object):
         datagen = DataWrapper(upload_file, datagen, headers)
         return self._request(url, datagen, headers, retryable=False)
 
-    def compare(self, localpath, remotefile):
+    def compare(self, localpath, remotefile, ignore=None, upwards=True):
         """Compare files/directories between server and client(as per SHA1)"""
         if not os.path.exists(localpath):
             raise ValueError(
                     u"local file '{}' doesn't exist".format(localpath))
         elif os.path.isdir(localpath):
-            return self._compare_dir(localpath, remotefile)
+            return self._compare_dir(localpath, remotefile, ignore, upwards)
         elif os.path.isfile(localpath):
             return self._compare_file(localpath, remotefile)
         else:
@@ -1136,14 +1136,15 @@ class BoxApi(object):
         remote_sha1 = self.get_file_info(remotefile)['sha1']
         return get_sha1(localfile) == remote_sha1
 
-    def _compare_dir(self, localdir, remotedir, ignore_common=True):
+    def _compare_dir(self, localdir, remotedir, ignore, upwards,
+            ignore_common=True):
         """Compare directories between server and client"""
         remotedir = self.get_folder_info(remotedir)
         localdir = os.path.normpath(localdir)
-        return self._do_compare_dir(localdir, remotedir,
+        return self._do_compare_dir(localdir, remotedir, ignore, upwards,
                 DiffResult(localdir, remotedir[0], ignore_common))
 
-    def _do_compare_dir(self, localdir, remotedir, result):
+    def _do_compare_dir(self, localdir, remotedir, ignore, upwards, result):
         children = [entry for entries in
                 (i['item_collection']['entries'] for i in remotedir)
                 for entry in entries]
@@ -1151,12 +1152,27 @@ class BoxApi(object):
                             for f in children if 'sha1' in f)
         server_folder_map = dict((f['name'], f) \
                             for f in children if 'sha1' not in f)
+        if upwards is False and ignore:
+            for name, f in server_file_map.items():
+                if self._ignore_path(ignore, name):
+                    logger.info(u"skip the remote file: {}".format(name))
+                    del server_file_map[name]
+            for name, f in server_folder_map.items():
+                if self._ignore_path(ignore, name):
+                    logger.info(u"skip the remote folder: {}".format(name))
+                    del server_folder_map[name]
+            
         result_item = result.start_add(remotedir[0])
-
         subfolders = []
         for filename in os.listdir(localdir):
             path = os.path.join(localdir, filename)
-            if os.path.isfile(path):
+            is_file = os.path.isfile(path)
+            if upwards and self._ignore_path(ignore, filename):
+                logger.info(u"skip the local {}: {}".format(
+                    "file" if is_file else "folder", filename))
+                continue
+
+            if is_file:
                 node = server_file_map.pop(filename, None)
                 if node is None:
                     result_item.add_client_unique(True, path)
@@ -1169,13 +1185,16 @@ class BoxApi(object):
                     result_item.add_client_unique(False, path)
                 else:
                     subfolders.append(folder_node)
+            else:
+                logger.warn(u"ignore the path {}" \
+                        "(neither a file nor a folder)".format(path))
         result_item.add_server_unique(True, server_file_map)
         result_item.add_server_unique(False, server_folder_map)
         # compare recursively
         for folder in subfolders:
             path = os.path.join(localdir, folder['name'])
             folder = self.get_folder_info(folder['id'])
-            self._do_compare_dir(path, folder, result)
+            self._do_compare_dir(path, folder, ignore, upwards, result)
         result.end_add()
         return result
 
@@ -1262,15 +1281,17 @@ class BoxApi(object):
             else:
                 self._download_dir((id_, path), localdir, ignore, verbose)
 
-    def push(self, localdir, remotedir, dry_run=False, ignore=None):
+    def push(self, localdir, remotedir, dry_run=False, delete=False,
+            ignore=None):
         """Sync directories between client(source) and server(destination)"""
         if dry_run:
             logger.info("push dry run...")
         localdir = localdir or "."
-        result = self._compare_dir(localdir, remotedir)
+        result = self._compare_dir(localdir, remotedir, ignore, upwards=True)
 
-        for is_file, path, id_ in self._server_only_files(result):
-            self._delete_remote(dry_run, is_file, path, id_)
+        if delete:
+            for is_file, path, id_ in self._server_only_files(result):
+                self._delete_remote(dry_run, is_file, path, id_)
 
         for is_file, path, parent in self._client_only_files(result, localdir):
             self._upload_path(dry_run, is_file, path, parent, ignore)
@@ -1278,16 +1299,17 @@ class BoxApi(object):
         for path, id_, parent in self._diff_files(result, localdir):
             self._upload_path(dry_run, id_, path, parent, ignore)
 
-    def pull(self, remotedir, localdir, dry_run=False,
+    def pull(self, remotedir, localdir, dry_run=False, delete=False,
             ignore=None, verbose=False):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
         localdir = localdir or "."
-        result = self._compare_dir(localdir, remotedir)
+        result = self._compare_dir(localdir, remotedir, ignore, upwards=False)
 
-        for is_file, path, _ in self._client_only_files(result, localdir):
-            self._delete_local(dry_run, is_file, path)
+        if delete:
+            for is_file, path, _ in self._client_only_files(result, localdir):
+                self._delete_local(dry_run, is_file, path)
 
         for is_file, path, id_ in self._server_only_files(result):
             self._download_path(dry_run, is_file, path, id_, localdir,
