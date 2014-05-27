@@ -20,6 +20,8 @@ from functools import wraps
 import gzip
 import StringIO
 from contextlib import contextmanager
+from Queue import Queue
+from threading import Thread
 
 import ConfigParser
 import cookielib
@@ -229,8 +231,9 @@ def retry(forgivable_exceptions, forgive=lambda x: True,
 
 
 @contextmanager
-def ignored(*exceptions):
-    """Ignore the given exceptions"""
+def suppress(*exceptions):
+    """Ignore the given exceptions(available in Python 3.4+)
+    """
     try:
         yield
     except exceptions:
@@ -279,3 +282,59 @@ def suppress_exception(handled_exceptions, handler=None,
         return wrapper
 
     return decorator
+
+
+class JobQueue(object):
+    """A threaded job queue
+    """
+
+    def __init__(self, threads):
+        self._threads = threads
+        self._thread_enabled = threads > 1
+        self._queue = None
+
+    def disable_thread(self):
+        self._thread_enabled = False
+
+    def start(self):
+        if self._threads <= 1:
+            return
+
+        # calling start will automatically enable thread
+        self._thread_enabled = True
+        if self._queue: # threads already created
+            return
+
+        queue = self._queue = Queue()
+
+        def work():
+            while True:
+                func, args = queue.get()
+                func(*args)
+                queue.task_done()
+
+        for _ in range(self._threads):
+            t = Thread(target=work)
+            t.daemon = True
+            t.start()
+
+    def finish(self):
+        if self._queue:
+            self._queue.join()
+
+    def add_task(self, func, args):
+        if self._thread_enabled and self._queue:
+            self._queue.put((func, args))
+        else:
+            func(*args)
+
+
+@contextmanager
+def threaded(queue):
+    """Wrap the block with the threaded queue
+    """
+    queue.start()
+    try:
+        yield
+    finally:
+        queue.finish()

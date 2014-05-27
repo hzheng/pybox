@@ -1,6 +1,8 @@
 [app]
 client_id = YOUR_CLIENT_ID
 client_secret = YOUR_CLIENT_SECRET
+redirect_uri = http://localhost
+threads = 5
 
 [account-YOUR_ACCOUNT_NAME]
 access_token = YOUR_ACCESS_TOKEN

@@ -28,7 +28,8 @@ from poster.streaminghttp import register_openers
 from mechanize._mechanize import FormNotFoundError
 
 from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
-        stringify, unzip_stream, retry, ignored, suppress_exception
+        stringify, unzip_stream, retry, suppress, suppress_exception, \
+        JobQueue, threaded
 
 
 logger = get_logger()
@@ -241,6 +242,14 @@ class BoxApi(object):
         self._token_time = None
         self._account = None
         self._precheck = True # need set in configuration?
+        try:
+            self._threads = conf_parser.getint("app", "threads")
+        except ConfigParser.NoOptionError:
+            self._threads = 5
+        except ValueError:
+            raise ConfigError("threads '{}' should be an int".format(
+                conf_parser.get("app", "threads")))
+        self._job_queue = JobQueue(self._threads)
 
     @staticmethod
     def _log_response(response):
@@ -257,7 +266,7 @@ class BoxApi(object):
             return ""
 
         rsp_data = response
-        with ignored(KeyError):
+        with suppress(KeyError):
             if response.headers['Content-Encoding'] == 'gzip':
                 rsp_data = unzip_stream(response)
         if response.headers['Content-Type'] != 'application/json':
@@ -620,7 +629,7 @@ class BoxApi(object):
             return attrs['id'], attrs['type'] == 'file'
 
     def _convert_to_id(self, name, is_file):
-            return self.get_file_id(name, is_file)[0]
+        return self.get_file_id(name, is_file)[0]
 
     def _is_file_id(self, file_id):
         """Test if the given id is a file's id"""
@@ -886,6 +895,7 @@ class BoxApi(object):
         info = self.get_info(remotefile)
         if 'sha1' in info:
             file_data = (info['id'], info['name'], info['sha1'])
+            self._job_queue.disable_thread()
             self._download_file(file_data, localdir, verbose, ignore=ignore)
         else:
             if type(info) is list:
@@ -894,7 +904,8 @@ class BoxApi(object):
                 folder_data = (info['id'], info['name'])
             else:
                 assert False, "unexpected info type: {}".format(type(info))
-            self._download_dir(folder_data, localdir, ignore, verbose)
+            with threaded(self._job_queue):
+                self._download_dir(folder_data, localdir, ignore, verbose)
 
     @suppress_exception(FileNotFoundError, report_download_missing,
             "folder_name")
@@ -955,14 +966,15 @@ class BoxApi(object):
                         "(same sha1)".format(file_name))
                 return
 
-        logger.info(u"downloading the file '{}'(id={}) to {}".format(
-            file_name, file_id, localdir))
-        self._do_download(encode(localdir), self.DOWNLOAD_URL.format(file_id),
-                verbose)
+        msg = u"downloading the file '{}'(id={}) to {}".format(
+            file_name, file_id, localdir)
+        self._job_queue.add_task(self._do_download,
+                (localdir, self.DOWNLOAD_URL.format(file_id), verbose, msg))
 
     @retry((urllib2.URLError, socket.error), forgive_request,
             tries=10, logger=logger)
-    def _do_download(self, localdir, url, verbose):
+    def _do_download(self, localdir, url, verbose, msg):
+        logger.info(msg)
         logger.debug("download url: {}".format(url))
         stream = self._request(url, compress=False, retryable=False)
         meta = stream.info()
@@ -974,7 +986,7 @@ class BoxApi(object):
         written = 0.0
         progress_chars = ['-', '\\', '|', '/']
         loop = 0
-        with open(os.path.join(localdir, name), 'wb') as f:
+        with open(os.path.join(encode(localdir), name), 'wb') as f:
             while True:
                 buf = stream.read(BLOCK_SIZE)
                 if not buf:
@@ -993,7 +1005,7 @@ class BoxApi(object):
 
     @suppress_exception(FileNotFoundError, report_upload_missing,
             "uploaded,parent")
-    def upload(self, uploaded, parent=None, ignore=None, remote_id=None):
+    def upload(self, uploaded, parent=None, ignore=None):
         """Upload the given file/directory to a remote directory.
         In case a file already exists on the server, upload will be skipped
         if two files have the same SHA1, otherwise a new version of the file
@@ -1004,7 +1016,10 @@ class BoxApi(object):
         http://developers.box.com/docs/#files-upload-a-new-version-of-a-file
         """
         self._check()
+        with threaded(self._job_queue):
+            self._upload(uploaded, parent, ignore)
 
+    def _upload(self, uploaded, parent, ignore, remote_id=None):
         if not parent:
             parent = self.ROOT_ID
         elif not self._is_id(parent):
@@ -1030,7 +1045,7 @@ class BoxApi(object):
         assert upload_dir_id, "upload_dir_id should be present"
         for filename in os.listdir(upload_dir):
             path = os.path.join(upload_dir, filename)
-            self.upload(path, upload_dir_id, ignore)
+            self._upload(path, upload_dir_id, ignore)
 
     def _check_file_on_server(self, filepath, parent):
         """Check if the file already exists on the server
@@ -1071,7 +1086,7 @@ class BoxApi(object):
                 return
 
         url = self.UPLOAD_URL.format(("/" + remote_id) if remote_id else "")
-        return self._do_upload(upload_file, parent, url)
+        self._job_queue.add_task(self._do_upload, (upload_file, parent, url))
 
     @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
     def _do_upload(self, upload_file, parent, url):
@@ -1116,7 +1131,7 @@ class BoxApi(object):
                     return self.datagen.next()
 
         datagen = DataWrapper(upload_file, datagen, headers)
-        return self._request(url, datagen, headers, retryable=False)
+        self._request(url, datagen, headers, retryable=False)
 
     def compare(self, localpath, remotefile, ignore=None, upwards=True):
         """Compare files/directories between server and client(as per SHA1)"""
@@ -1153,15 +1168,15 @@ class BoxApi(object):
         server_folder_map = dict((f['name'], f) \
                             for f in children if 'sha1' not in f)
         if upwards is False and ignore:
-            for name, f in server_file_map.items():
+            for name, _ in server_file_map.items():
                 if self._ignore_path(ignore, name):
                     logger.info(u"skip the remote file: {}".format(name))
                     del server_file_map[name]
-            for name, f in server_folder_map.items():
+            for name, _ in server_folder_map.items():
                 if self._ignore_path(ignore, name):
                     logger.info(u"skip the remote folder: {}".format(name))
                     del server_folder_map[name]
-            
+
         result_item = result.start_add(remotedir[0])
         subfolders = []
         for filename in os.listdir(localdir):
@@ -1262,7 +1277,7 @@ class BoxApi(object):
             logger.info(u"uploading a new {} '{}'(parent id={})".format(
                 "file" if is_file else "folder", path, parent))
         if not dry_run:
-            self.upload(path, parent, ignore=ignore, remote_id=remote_id)
+            self._upload(path, parent, ignore=ignore, remote_id=remote_id)
 
     def _download_path(self, dry_run, is_file, path, id_, localdir,
             is_new, ignore, verbose):
@@ -1293,11 +1308,13 @@ class BoxApi(object):
             for is_file, path, id_ in self._server_only_files(result):
                 self._delete_remote(dry_run, is_file, path, id_)
 
-        for is_file, path, parent in self._client_only_files(result, localdir):
-            self._upload_path(dry_run, is_file, path, parent, ignore)
+        with threaded(self._job_queue):
+            for is_file, path, parent in \
+                    self._client_only_files(result, localdir):
+                self._upload_path(dry_run, is_file, path, parent, ignore)
 
-        for path, id_, parent in self._diff_files(result, localdir):
-            self._upload_path(dry_run, id_, path, parent, ignore)
+            for path, id_, parent in self._diff_files(result, localdir):
+                self._upload_path(dry_run, id_, path, parent, ignore)
 
     def pull(self, remotedir, localdir, dry_run=False, delete=False,
             ignore=None, verbose=False):
@@ -1311,10 +1328,11 @@ class BoxApi(object):
             for is_file, path, _ in self._client_only_files(result, localdir):
                 self._delete_local(dry_run, is_file, path)
 
-        for is_file, path, id_ in self._server_only_files(result):
-            self._download_path(dry_run, is_file, path, id_, localdir,
-                    True, ignore, verbose)
+        with threaded(self._job_queue):
+            for is_file, path, id_ in self._server_only_files(result):
+                self._download_path(dry_run, is_file, path, id_, localdir,
+                        True, ignore, verbose)
 
-        for path, id_ in self._diff_files(result, None):
-            self._download_path(dry_run, True, path, id_, localdir,
-                    False, ignore, verbose)
+            for path, id_ in self._diff_files(result, None):
+                self._download_path(dry_run, True, path, id_, localdir,
+                        False, ignore, verbose)
