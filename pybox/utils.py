@@ -309,9 +309,11 @@ class JobQueue(object):
 
         def work():
             while True:
-                func, args = queue.get()
-                func(*args)
-                queue.task_done()
+                func, args, kwargs = queue.get()
+                try:
+                    func(*args, **kwargs)
+                finally:
+                    queue.task_done()
 
         for _ in range(self._threads):
             t = Thread(target=work)
@@ -322,12 +324,11 @@ class JobQueue(object):
         if self._queue:
             self._queue.join()
 
-    def add_task(self, func, args):
+    def add_task(self, func, *args, **kwargs):
         if self._thread_enabled and self._queue:
-            self._queue.put((func, args))
+            self._queue.put((func, args, kwargs))
         else:
-            func(*args)
-
+            func(*args, **kwargs)
 
 @contextmanager
 def threaded(queue):

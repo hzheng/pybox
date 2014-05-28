@@ -969,7 +969,7 @@ class BoxApi(object):
         msg = u"downloading the file '{}'(id={}) to {}".format(
             file_name, file_id, localdir)
         self._job_queue.add_task(self._do_download,
-                (localdir, self.DOWNLOAD_URL.format(file_id), verbose, msg))
+                localdir, self.DOWNLOAD_URL.format(file_id), verbose, msg)
 
     @retry((urllib2.URLError, socket.error), forgive_request,
             tries=10, logger=logger)
@@ -998,8 +998,9 @@ class BoxApi(object):
                 if verbose:
                     written += len(buf)
                     percent = int((written / size) * 100)
-                    sys.stdout.write("\rdownloading {}...{} {}%".format(
-                        name, progress_chars[loop % 4], percent))
+                    sys.stdout.write("\rdownloading {}...{} {}%{}".format(
+                        name, progress_chars[loop % 4], percent, \
+                        ' ' * (30 - len(name))))
                     loop += 1
                     sys.stdout.flush()
 
@@ -1086,7 +1087,7 @@ class BoxApi(object):
                 return
 
         url = self.UPLOAD_URL.format(("/" + remote_id) if remote_id else "")
-        self._job_queue.add_task(self._do_upload, (upload_file, parent, url))
+        self._job_queue.add_task(self._do_upload, upload_file, parent, url)
 
     @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
     def _do_upload(self, upload_file, parent, url):
