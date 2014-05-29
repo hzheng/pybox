@@ -72,13 +72,12 @@ def parse_args(argv):
             help="sync from remote(source) to local(destination) directories")
     parser.add_option("-n", "--dry-run", action="store_true", dest="dry_run",
             help="show what would have been transferred when sync")
-    parser.add_option("-D", "--delete", action="store_true", dest="delete",
-            help="delete extraneous files from destination")
     parser.add_option("-x", "--exclude", dest="exclude",
             help="exclude files whose names match the given regex")
-    parser.add_option("-X", "--exclude-remote", dest="exclude_remote",
-            help="exclude remote files whose names match the given regex" \
-                    "(used in compare)")
+    parser.add_option("-D", "--delete", action="store_true", dest="delete",
+            help="delete extraneous files from destination")
+    parser.add_option("--del-exclude", action="store_true", dest="del_exclude",
+            help="delete excluded files from destination")
     parser.add_option("-v", "--verbose", action="store_true", dest="verbose",
             help="show more details")
     parser.add_option("-f", "--from-file", dest="from_file",
@@ -215,12 +214,8 @@ def get_action(client, parser, options, args):
         action = 'compare'
         # pair the arguments
         args = zip(args[::2], args[1::2])
-        if options.exclude_remote:
-            extra_args.append(options.exclude_remote)
-            extra_args.append(False)
-        elif options.exclude:
+        if options.exclude:
             extra_args.append(options.exclude)
-            extra_args.append(True)
     elif options.push or options.pull:
         if len(args) % 2:
             parser.error("push/pull's arguments must be even numbers")
@@ -230,6 +225,7 @@ def get_action(client, parser, options, args):
         extra_args.append(options.dry_run)
         extra_args.append(options.delete)
         extra_args.append(options.exclude)
+        extra_args.append(options.del_exclude)
         if options.pull:
             extra_args.append(options.verbose)
     else:

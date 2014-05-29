@@ -331,7 +331,8 @@ class BoxApi(object):
         logger.warn(u"cannot upload {uploaded} due to missing destination " \
                 "directory(id={parent})".format(**values))
 
-    @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
+    @retry((urllib2.URLError, socket.error), forgive_request,
+            tries=10, logger=logger)
     def _retryable_auth_request(self, url, data, headers, method):
         return self._auth_request(url, data, headers, method)
 
@@ -344,7 +345,8 @@ class BoxApi(object):
         return urllib2.urlopen(req, timeout=60)
 
     @staticmethod
-    @retry(urllib2.URLError, forgive_request, tries=5, logger=logger)
+    @retry((urllib2.URLError, socket.error), forgive_request,
+            tries=5, logger=logger)
     def _noauth_request(url, params):
         params = urllib.urlencode(params)
         logger.debug(u"requesting {}?{} without auth...".format(url, params))
@@ -1089,7 +1091,8 @@ class BoxApi(object):
         url = self.UPLOAD_URL.format(("/" + remote_id) if remote_id else "")
         self._job_queue.add_task(self._do_upload, upload_file, parent, url)
 
-    @retry(urllib2.URLError, forgive_request, tries=10, logger=logger)
+    @retry((urllib2.URLError, socket.error), forgive_request,
+            tries=10, logger=logger)
     def _do_upload(self, upload_file, parent, url):
         logger.info(u"uploading {} to {}".format(upload_file, parent))
 
@@ -1134,13 +1137,14 @@ class BoxApi(object):
         datagen = DataWrapper(upload_file, datagen, headers)
         self._request(url, datagen, headers, retryable=False)
 
-    def compare(self, localpath, remotefile, ignore=None, upwards=True):
+    def compare(self, localpath, remotefile, ignore=None, ignore_flags=None):
         """Compare files/directories between server and client(as per SHA1)"""
         if not os.path.exists(localpath):
             raise ValueError(
                     u"local file '{}' doesn't exist".format(localpath))
         elif os.path.isdir(localpath):
-            return self._compare_dir(localpath, remotefile, ignore, upwards)
+            return self._compare_dir(localpath, remotefile, ignore,
+                    ignore_flags or (True, True))
         elif os.path.isfile(localpath):
             return self._compare_file(localpath, remotefile)
         else:
@@ -1152,15 +1156,16 @@ class BoxApi(object):
         remote_sha1 = self.get_file_info(remotefile)['sha1']
         return get_sha1(localfile) == remote_sha1
 
-    def _compare_dir(self, localdir, remotedir, ignore, upwards,
+    def _compare_dir(self, localdir, remotedir, ignore, ignore_flags,
             ignore_common=True):
         """Compare directories between server and client"""
         remotedir = self.get_folder_info(remotedir)
         localdir = os.path.normpath(localdir)
-        return self._do_compare_dir(localdir, remotedir, ignore, upwards,
+        return self._do_compare_dir(localdir, remotedir, ignore, ignore_flags,
                 DiffResult(localdir, remotedir[0], ignore_common))
 
-    def _do_compare_dir(self, localdir, remotedir, ignore, upwards, result):
+    def _do_compare_dir(self, localdir, remotedir, ignore, ignore_flags,
+            result):
         children = [entry for entries in
                 (i['item_collection']['entries'] for i in remotedir)
                 for entry in entries]
@@ -1168,7 +1173,8 @@ class BoxApi(object):
                             for f in children if 'sha1' in f)
         server_folder_map = dict((f['name'], f) \
                             for f in children if 'sha1' not in f)
-        if upwards is False and ignore:
+        ignore_remote, ignore_local = ignore_flags
+        if ignore_remote and ignore:
             for name, _ in server_file_map.items():
                 if self._ignore_path(ignore, name):
                     logger.info(u"skip the remote file: {}".format(name))
@@ -1183,7 +1189,7 @@ class BoxApi(object):
         for filename in os.listdir(localdir):
             path = os.path.join(localdir, filename)
             is_file = os.path.isfile(path)
-            if upwards and self._ignore_path(ignore, filename):
+            if ignore_local and self._ignore_path(ignore, filename):
                 logger.info(u"skip the local {}: {}".format(
                     "file" if is_file else "folder", filename))
                 continue
@@ -1210,7 +1216,7 @@ class BoxApi(object):
         for folder in subfolders:
             path = os.path.join(localdir, folder['name'])
             folder = self.get_folder_info(folder['id'])
-            self._do_compare_dir(path, folder, ignore, upwards, result)
+            self._do_compare_dir(path, folder, ignore, ignore_flags, result)
         result.end_add()
         return result
 
@@ -1298,12 +1304,13 @@ class BoxApi(object):
                 self._download_dir((id_, path), localdir, ignore, verbose)
 
     def push(self, localdir, remotedir, dry_run=False, delete=False,
-            ignore=None):
+            ignore=None, del_exclude=False):
         """Sync directories between client(source) and server(destination)"""
         if dry_run:
             logger.info("push dry run...")
         localdir = localdir or "."
-        result = self._compare_dir(localdir, remotedir, ignore, upwards=True)
+        result = self._compare_dir(localdir, remotedir, ignore,
+                ignore_flags=(not del_exclude, True))
 
         if delete:
             for is_file, path, id_ in self._server_only_files(result):
@@ -1318,12 +1325,13 @@ class BoxApi(object):
                 self._upload_path(dry_run, id_, path, parent, ignore)
 
     def pull(self, remotedir, localdir, dry_run=False, delete=False,
-            ignore=None, verbose=False):
+            ignore=None, del_exclude=False, verbose=False):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
         localdir = localdir or "."
-        result = self._compare_dir(localdir, remotedir, ignore, upwards=False)
+        result = self._compare_dir(localdir, remotedir, ignore,
+                ignore_flags=(True, not del_exclude))
 
         if delete:
             for is_file, path, _ in self._client_only_files(result, localdir):
