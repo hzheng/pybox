@@ -22,6 +22,7 @@ import shutil
 import socket
 import urllib
 import urllib2
+from httplib import BadStatusLine
 
 from poster.encode import multipart_encode
 from poster.streaminghttp import register_openers
@@ -318,6 +319,8 @@ class BoxApi(object):
                 logger.error("non socket.error: {}".format(e))
         elif isinstance(e, socket.error):
             return True
+        elif isinstance(e, BadStatusLine) or isinstance(e, StatusError):
+            return True
 
     @staticmethod
     def report_download_missing(values):
@@ -331,7 +334,7 @@ class BoxApi(object):
         logger.warn(u"cannot upload {uploaded} due to missing destination " \
                 "directory(id={parent})".format(**values))
 
-    @retry((urllib2.URLError, socket.error), forgive_request,
+    @retry((urllib2.URLError, socket.error, BadStatusLine), forgive_request,
             tries=10, logger=logger)
     def _retryable_auth_request(self, url, data, headers, method):
         return self._auth_request(url, data, headers, method)
@@ -500,8 +503,12 @@ class BoxApi(object):
         logger.info("tokens fetched")
         return self._access_token, self._refresh_token, now
 
+    @retry(StatusError, forgive_request, tries=10, logger=logger)
     def update_auth_token(self):
         """Update access token"""
+        #FIXME: may get invalid_grant(Refresh token has expired) error
+        #       and retry doesn't work(Box's bug? The refresh token is supposed
+        #       to be valid in 60 days. Oddly, it is Ok within the next run)
         logger.info("updating tokens")
         return self._fetch_token()
 

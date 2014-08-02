@@ -35,7 +35,7 @@ try:
 except ImportError:
     import xml.etree.ElementTree as etree
 
-ENCODING = sys.stdin.encoding # typically "UTF-8"
+ENCODING = sys.stdin.encoding or "UTF-8"
 
 LOGGER_CONF_FILE = os.path.join(
         os.getenv('LOG_CONF_DIR') or ".", "box-logging.conf")
