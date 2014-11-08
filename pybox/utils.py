@@ -38,7 +38,7 @@ except ImportError:
 ENCODING = sys.stdin.encoding or "UTF-8"
 
 LOGGER_CONF_FILE = os.path.join(
-        os.getenv('LOG_CONF_DIR') or ".", "box-logging.conf")
+    os.getenv('LOG_CONF_DIR') or ".", "box-logging.conf")
 LOGGER_NAME = "box"
 EMAIL_REGEX = re.compile(r"([^@]+)@[^@]+\.[^@]+")
 
@@ -73,7 +73,7 @@ def get_logger():
     """Return a logger with the given name from the given configuration file"""
     if not os.path.exists(LOGGER_CONF_FILE):
         sys.stderr.write("log configuration file {} does NOT exist\n"
-                .format(LOGGER_CONF_FILE))
+                         .format(LOGGER_CONF_FILE))
         sys.exit(1)
 
     try:
@@ -105,10 +105,10 @@ def stringify(obj):
 
 def map_element(element):
     """Convert an XML element to a map"""
-    #if sys.version_info >= (2, 7):
-        #return {e.tag: e.text.strip() for e in list(element)}
-    #return dict((e.tag, e.text and e.text.strip() or "")
-            #for e in list(element))
+    # if sys.version_info >= (2, 7):
+        # return {e.tag: e.text.strip() for e in list(element)}
+    # return dict((e.tag, e.text and e.text.strip() or "")
+            # for e in list(element))
     return dict((e.tag, e.text) for e in list(element))
 
 
@@ -121,7 +121,7 @@ def get_browser(debug=False):
 
     # Browser options
     browser.set_handle_equiv(True)
-    #browser.set_handle_gzip(True)
+    # browser.set_handle_gzip(True)
     browser.set_handle_redirect(True)
     browser.set_handle_referer(True)
     # avoid to be rejected by robots.txt
@@ -129,15 +129,15 @@ def get_browser(debug=False):
 
     # Follows refresh 0 but not hangs on refresh > 0
     browser.set_handle_refresh(
-            mechanize._http.HTTPRefreshProcessor(), max_time=1)
+        mechanize._http.HTTPRefreshProcessor(), max_time=1)
 
     browser.set_debug_http(debug)
     browser.set_debug_redirects(debug)
     browser.set_debug_responses(debug)
 
     browser.addheaders = [('User-agent',
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:7.0.1)"
-        " Gecko/20100101 Firefox/7.0.1")]
+                           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; "
+                           "rv:7.0.1) Gecko/20100101 Firefox/7.0.1")]
     return browser
 
 
@@ -177,7 +177,7 @@ def apply_function(f, *args, **kwargs):
 
 
 def retry(forgivable_exceptions, forgive=lambda x: True,
-        tries=5, delay=5, backoff=2, logger=None):
+          tries=5, delay=5, backoff=2, logger=None):
     """Retry decorator with exponential backoff.
 
     `forgivable_exceptions` is a type of Exception(or Exception tuple)
@@ -213,7 +213,7 @@ def retry(forgivable_exceptions, forgive=lambda x: True,
                         raise forgiven
 
                     msg = "Error: {}. Retry in {} seconds...".format(
-                            str(e), mdelay)
+                        str(e), mdelay)
                     if logger:
                         logger.warn(msg)
                     else:
@@ -223,7 +223,7 @@ def retry(forgivable_exceptions, forgive=lambda x: True,
                     mdelay *= backoff
                     if callable(forgiven):
                         forgiven(args[0] if len(args) else None)
-            return f(*args, **kwargs) # last chance
+            return f(*args, **kwargs)  # last chance
 
         return wrapper
 
@@ -241,7 +241,7 @@ def suppress(*exceptions):
 
 
 def suppress_exception(handled_exceptions, handler=None,
-        var_names=None, *xargs, **xkwargs):
+                       var_names=None, *xargs, **xkwargs):
     """Suppress the given exception(s)
 
     `handler` the function which will be called if provided
@@ -277,7 +277,7 @@ def suppress_exception(handled_exceptions, handler=None,
                         break
                 else:
                     assert False, "local variable(s) '{}' not found".format(
-                            ",".join(names))
+                        ",".join(names))
                 return apply_function(handler, values, *xargs, **xkwargs)
         return wrapper
 
@@ -285,6 +285,7 @@ def suppress_exception(handled_exceptions, handler=None,
 
 
 class JobQueue(object):
+
     """A threaded job queue
     """
 
@@ -302,7 +303,7 @@ class JobQueue(object):
 
         # calling start will automatically enable thread
         self._thread_enabled = True
-        if self._queue: # threads already created
+        if self._queue:  # threads already created
             return
 
         queue = self._queue = Queue()
@@ -329,6 +330,7 @@ class JobQueue(object):
             self._queue.put((func, args, kwargs))
         else:
             func(*args, **kwargs)
+
 
 @contextmanager
 def threaded(queue):

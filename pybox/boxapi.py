@@ -29,8 +29,8 @@ from poster.streaminghttp import register_openers
 from mechanize._mechanize import FormNotFoundError
 
 from pybox.utils import encode, get_browser, get_logger, get_sha1, is_posix, \
-        stringify, unzip_stream, retry, suppress, suppress_exception, \
-        JobQueue, threaded
+    stringify, unzip_stream, retry, suppress, suppress_exception, \
+    JobQueue, threaded
 
 
 logger = get_logger()
@@ -105,7 +105,7 @@ class DiffResult(object):
 
         def add_client_unique(self, is_file, path):
             self.get_client_unique(is_file).append(
-                    path[self.container.local_prelen:])
+                path[self.container.local_prelen:])
 
         def get_server_unique(self, is_file):
             return self._server_uniques[0 if is_file else 1]
@@ -123,7 +123,7 @@ class DiffResult(object):
         def add_compare(self, is_diff, localpath, remotenode):
             if is_diff or not self._ignore_common:
                 self.get_compare(is_diff).append(
-                        (localpath[self.container.local_prelen:], remotenode))
+                    (localpath[self.container.local_prelen:], remotenode))
 
     def __init__(self, localdir, remotedir, ignore_common=True):
         self.localdir = localdir
@@ -137,7 +137,7 @@ class DiffResult(object):
 
     def start_add(self, context_node):
         item = DiffResult._DiffResultItem(
-                self, context_node, self._ignore_common)
+            self, context_node, self._ignore_common)
         self.context.append(context_node['name'])
         self.items.append(item)
         return item
@@ -176,21 +176,21 @@ class DiffResult(object):
     def __unicode__(self):
         result = self.report()
         return u"diff between client path({}) and server path({}):\n" \
-                "[client only files]:\n{}\n"  \
-                "[client only folders]:\n{}\n" \
-                "[server only files]:\n{}\n" \
-                "[server only folders]:\n{}\n" \
-                "[diff files]:\n{}\n" \
-                "[common files]:\n{}\n".format(
-                        self.localdir, self.remotename,
-                        ", ".join(result[0]),
-                        ", ".join(result[1]),
-                        ", ".join(result[2]),
-                        ", ".join(result[3]),
-                        ", ".join(result[4]),
-                        "***ignored***" if self._ignore_common
-                        else ", ".join(result[5]),
-                        )
+               "[client only files]:\n{}\n"  \
+               "[client only folders]:\n{}\n" \
+               "[server only files]:\n{}\n" \
+               "[server only folders]:\n{}\n" \
+               "[diff files]:\n{}\n" \
+               "[common files]:\n{}\n".format(
+                   self.localdir, self.remotename,
+                   ", ".join(result[0]),
+                   ", ".join(result[1]),
+                   ", ".join(result[2]),
+                   ", ".join(result[3]),
+                   ", ".join(result[4]),
+                   "***ignored***" if self._ignore_common
+                   else ", ".join(result[5]),
+               )
 
     def __str__(self):
         return encode(unicode(self))
@@ -210,7 +210,7 @@ class BoxApi(object):
     TIME_FORMAT = "%Y-%m-%d %H:%M"
     MAX_TOKEN_DAYS = 60
     SAFE_TOKEN_DAYS = 10
-    LIST_SIZE = 1000 # max number that box supports(its default is 100)
+    LIST_SIZE = 1000  # max number that box supports(its default is 100)
 
     # patterns
     FILENAME_PATTERN = re.compile('(.*filename=")(.+)(".*)')
@@ -219,10 +219,10 @@ class BoxApi(object):
 
     def __init__(self):
         conf_file = os.path.expanduser(
-                "~/.boxrc" if is_posix() else "~/_boxrc")
+            "~/.boxrc" if is_posix() else "~/_boxrc")
         if not os.path.exists(conf_file):
             raise ConfigError(
-                    "Configuration file {} not found".format(conf_file))
+                "Configuration file {} not found".format(conf_file))
 
         try:
             conf_parser = ConfigParser.ConfigParser()
@@ -233,7 +233,7 @@ class BoxApi(object):
             self._client_secret = conf_parser.get("app", "client_secret")
         except ConfigParser.NoSectionError as e:
             raise ConfigError("{} (in configuration file {})"
-                    .format(e, conf_file))
+                              .format(e, conf_file))
         try:
             self._redirect_uri = conf_parser.get("app", "redirect_uri")
         except ConfigParser.NoOptionError:
@@ -242,7 +242,7 @@ class BoxApi(object):
         self._refresh_token = None
         self._token_time = None
         self._account = None
-        self._precheck = True # need set in configuration?
+        self._precheck = True  # need set in configuration?
         try:
             self._threads = conf_parser.getint("app", "threads")
         except ConfigParser.NoOptionError:
@@ -292,23 +292,23 @@ class BoxApi(object):
         """Give the failed request a retry"""
         if isinstance(e, urllib2.HTTPError):
             err = e.code
-            if err >= 500: # not client's fault, try our luck
+            if err >= 500:  # not client's fault, try our luck
                 return True
-            elif err == 401: # unauthorized, try to update tokens
+            elif err == 401:  # unauthorized, try to update tokens
                 return BoxApi.update_auth_token
-            elif err == 408: # time-out
+            elif err == 408:  # time-out
                 return True
-            elif err == 429: # too many requests
+            elif err == 429:  # too many requests
                 return True
-            elif err == 403: # forbidden
+            elif err == 403:  # forbidden
                 return ForbiddenError()
-            elif err == 404: # not found
+            elif err == 404:  # not found
                 return FileNotFoundError()
-            elif err == 409: # file confliction
+            elif err == 409:  # file confliction
                 return FileConflictionError()
-            elif err == 405: # method not allowd
+            elif err == 405:  # method not allowd
                 return MethodNotALLowedError()
-            elif err == 400: # bad request
+            elif err == 400:  # bad request
                 return RequestError()
         elif isinstance(e, urllib2.URLError):
             #if isinstance(e.reason, socket.timeout):
@@ -331,11 +331,11 @@ class BoxApi(object):
 
     @staticmethod
     def report_upload_missing(values):
-        logger.warn(u"cannot upload {uploaded} due to missing destination " \
-                "directory(id={parent})".format(**values))
+        logger.warn(u"cannot upload {uploaded} due to missing destination "
+                    "directory(id={parent})".format(**values))
 
     @retry((urllib2.URLError, socket.error, BadStatusLine), forgive_request,
-            tries=10, logger=logger)
+           tries=10, logger=logger)
     def _retryable_auth_request(self, url, data, headers, method):
         return self._auth_request(url, data, headers, method)
 
@@ -349,14 +349,14 @@ class BoxApi(object):
 
     @staticmethod
     @retry((urllib2.URLError, socket.error), forgive_request,
-            tries=5, logger=logger)
+           tries=5, logger=logger)
     def _noauth_request(url, params):
         params = urllib.urlencode(params)
         logger.debug(u"requesting {}?{} without auth...".format(url, params))
         return urllib.urlopen(url, params)
 
     def _request(self, url, data=None, headers=None, method=None,
-            compress=True, retryable=True):
+                 compress=True, retryable=True):
         auth_req = ('_retryable' if retryable else '') + '_auth_request'
         headers = headers or {}
         if compress:
@@ -376,7 +376,7 @@ class BoxApi(object):
     @classmethod
     def _automate(cls, url, login, password):
         browser = get_browser(True)
-        browser.open(url) # suppress output?
+        browser.open(url)  # suppress output?
 
         browser.select_form(name='login_form')
         browser['login'] = login
@@ -408,10 +408,10 @@ class BoxApi(object):
         import binascii
         security_token = 'security_token' + binascii.hexlify(os.urandom(20))
         params = urllib.urlencode({
-                   'response_type': "code",
-                   'client_id': self._client_id,
-                   'redirect_uri': self._redirect_uri,
-                   'state': security_token})
+            'response_type': "code",
+            'client_id': self._client_id,
+            'redirect_uri': self._redirect_uri,
+            'state': security_token})
         url = self.AUTH_URL + "?" + params
         logger.debug("browsing auth url: {}".format(url))
         try:
@@ -424,7 +424,7 @@ class BoxApi(object):
         except FormNotFoundError as e:
             logger.error(e.message)
             raise ParameterError(
-                    "authorization failed, please check your login/password")
+                "authorization failed, please check your login/password")
 
     def get_auth_token(self, account, login, password=None):
         """Get the access token and refresh token.
@@ -447,16 +447,17 @@ class BoxApi(object):
         elif not login:
             try:
                 self._refresh_token = refresh_token \
-                        = parser.get(account, "refresh_token")
+                    = parser.get(account, "refresh_token")
                 self._access_token = access_token \
-                        = parser.get(account, "access_token")
+                    = parser.get(account, "access_token")
                 self._token_time = token_time \
-                        = datetime.strptime(parser.get(
-                            account, "token_time"), self.TIME_FORMAT)
+                    = datetime.strptime(parser.get(
+                        account, "token_time"), self.TIME_FORMAT)
                 days = (datetime.now() - token_time).days
                 if days > self.MAX_TOKEN_DAYS:
-                    raise ConfigError("refresh token has expired" \
-                            "({} days old), please relogin".format(days))
+                    raise ConfigError("refresh token has expired"
+                                      "({} days old), please relogin".
+                                      format(days))
                 elif days > self.SAFE_TOKEN_DAYS:
                     logger.warn("refresh token is {} days old".format(days))
 
@@ -474,13 +475,14 @@ class BoxApi(object):
         if refresh_token:
             return self._fetch_token()
 
-        raise ConfigError("refresh token must be provided for {},"\
-                "please change configuration or relogin".format(account))
+        raise ConfigError("refresh token must be provided for {}, "
+                          "please change configuration or relogin".
+                          format(account))
 
     def _fetch_token(self, code=None):
         params = {
-                   'client_id': self._client_id,
-                   'client_secret': self._client_secret}
+            'client_id': self._client_id,
+            'client_secret': self._client_secret}
         if code:
             params['grant_type'] = 'authorization_code'
             params['code'] = code
@@ -492,12 +494,12 @@ class BoxApi(object):
         self._access_token = rsp_obj['access_token']
         self._refresh_token = rsp_obj['refresh_token']
         self._conf_parser.set(
-                self._account, "access_token", self._access_token)
+            self._account, "access_token", self._access_token)
         self._conf_parser.set(
-                self._account, "refresh_token", self._refresh_token)
+            self._account, "refresh_token", self._refresh_token)
         now = datetime.now()
         self._conf_parser.set(self._account, "token_time",
-                datetime.strftime(now, self.TIME_FORMAT))
+                              datetime.strftime(now, self.TIME_FORMAT))
         with open(self._conf_file, 'w') as conf:
             self._conf_parser.write(conf)
         logger.info("tokens fetched")
@@ -549,7 +551,7 @@ class BoxApi(object):
         params = urllib.urlencode({
             'limit': limit, 'offset': offset, 'fields': fields})
         url = "{}folders/{}/items?{}".format(
-                self.BASE_URL, folder_id, params)
+            self.BASE_URL, folder_id, params)
         return self._request(url)
 
     @classmethod
@@ -594,7 +596,7 @@ class BoxApi(object):
             folder_id = self._get_file_id(files, name, False)
             if not folder_id:
                 msg = u"cannot find {} under folder with id: {}".format(
-                        name, folder_id)
+                    name, folder_id)
                 if raise_error:
                     logger.error(msg)
                     raise ValueError(msg)
@@ -607,12 +609,12 @@ class BoxApi(object):
         logger.debug(u"checking name: {}".format(name))
         files = self.list(folder_id)
         info = None
-        if not is_file: # check folder type
+        if not is_file:  # check folder type
             info = self._get_file_attrs(files, name, False)
             if info:
                 return info
 
-        if is_file is None or is_file: # check file type
+        if is_file is None or is_file:  # check file type
             info = self._get_file_attrs(files, name, True)
         if info:
             return info
@@ -690,9 +692,9 @@ class BoxApi(object):
             offset = 0
             while True:
                 params = urllib.urlencode(
-                        {'limit': limit, 'offset': offset})
+                    {'limit': limit, 'offset': offset})
                 url = "{}{}s/{}?{}".format(
-                        self.BASE_URL, 'folder', folder_id, params)
+                    self.BASE_URL, 'folder', folder_id, params)
                 result = self._request(url)
                 results.append(result)
                 children = result['item_collection']
@@ -716,12 +718,12 @@ class BoxApi(object):
         if is_file is False, check only folder type,
         if is_file is None, check both file and folder type.
         """
-        if is_file is not False: # check file type
+        if is_file is not False:  # check file type
             info = self.get_file_info(file_id, False)
             if info:
                 return info
 
-        if not is_file: # check folder type
+        if not is_file:  # check folder type
             info = self.get_folder_info(file_id, False)
         if info:
             return info
@@ -812,8 +814,8 @@ class BoxApi(object):
             raise
         except RequestError:
             if not recursive and not is_file:
-                logger.error(u"Probably the folder to be deleted({}) " \
-                        "is nonempty, try recursive deletion".format(id_))
+                logger.error(u"Probably the folder to be deleted({}) "
+                             "is nonempty, try recursive deletion".format(id_))
             raise
 
     def rename_file(self, remotefile, new_name):
@@ -838,7 +840,7 @@ class BoxApi(object):
 
         try:
             return self._update_info(is_file, remotefile,
-                    {"name": encode(new_name)})
+                                     {"name": encode(new_name)})
         except FileConflictionError:
             logger.error(u"{} {} already exists".format(
                 "File" if is_file else "Folder", new_name))
@@ -889,14 +891,14 @@ class BoxApi(object):
             new_folder = self._convert_to_id(new_folder, False)
         try:
             return self._update_info(is_file, target,
-                    {"parent": {"id": new_folder}})
-        except RequestError: # e.g. move to descendent
+                                     {"parent": {"id": new_folder}})
+        except RequestError:  # e.g. move to descendent
             logger.error(u"{} {} cannot move to {}".format(
                 "File" if is_file else "Folder", target, new_folder))
             raise
 
     def download(self, remotefile, localdir=None, ignore=None,
-            verbose=False):
+                 verbose=False):
         """Download the given remote file to a local directory"""
         self._check()
 
@@ -917,7 +919,7 @@ class BoxApi(object):
                 self._download_dir(folder_data, localdir, ignore, verbose)
 
     @suppress_exception(FileNotFoundError, report_download_missing,
-            "folder_name")
+                        "folder_name")
     def _download_dir(self, folder_data, localdir, ignore, verbose):
         """Download the directory with the given id to a local directory"""
         if type(folder_data) is tuple:
@@ -943,20 +945,20 @@ class BoxApi(object):
             folder_name, folder_id, localdir))
         files = (entry for entries in
                 (i['item_collection']['entries'] for i in folder_info)
-                for entry in entries)
+                 for entry in entries)
         for f in files:
             file_type, file_id, file_name = f['type'], f['id'], f['name']
             if file_type == 'file':
                 self._download_file((file_id, file_name, f['sha1']),
-                        localdir, verbose, ignore=ignore)
+                                    localdir, verbose, ignore=ignore)
             elif file_type == 'folder':
                 self._download_dir((file_id, file_name),
-                        localdir, ignore, verbose)
+                                   localdir, ignore, verbose)
             else:
                 logger.warn(u"unexpected file type".format(file_type))
 
     @suppress_exception(FileNotFoundError, report_download_missing,
-            "file_name")
+                        "file_name")
     def _download_file(self, file_data, localdir, verbose, ignore=None):
         """Download the regular file with the given id to a local directory
 
@@ -971,17 +973,18 @@ class BoxApi(object):
         if file_sha1 and self._precheck:
             localfile = os.path.join(localdir, file_name)
             if os.path.exists(localfile) and get_sha1(localfile) == file_sha1:
-                logger.info(u"skip downloading the file: {}" \
-                        "(same sha1)".format(file_name))
+                logger.info(u"skip downloading the file: {}"
+                            "(same sha1)".format(file_name))
                 return
 
         msg = u"downloading the file '{}'(id={}) to {}".format(
             file_name, file_id, localdir)
-        self._job_queue.add_task(self._do_download,
-                localdir, self.DOWNLOAD_URL.format(file_id), verbose, msg)
+        self._job_queue.add_task(self._do_download, localdir,
+                                 self.DOWNLOAD_URL.format(file_id),
+                                 verbose, msg)
 
     @retry((urllib2.URLError, socket.error), forgive_request,
-            tries=10, logger=logger)
+           tries=10, logger=logger)
     def _do_download(self, localdir, url, verbose, msg):
         logger.info(msg)
         logger.debug("download url: {}".format(url))
@@ -1008,13 +1011,13 @@ class BoxApi(object):
                     written += len(buf)
                     percent = int((written / size) * 100)
                     sys.stdout.write("\rdownloading {}...{} {}%{}".format(
-                        name, progress_chars[loop % 4], percent, \
+                        name, progress_chars[loop % 4], percent,
                         ' ' * (30 - len(name))))
                     loop += 1
                     sys.stdout.flush()
 
     @suppress_exception(FileNotFoundError, report_upload_missing,
-            "uploaded,parent")
+                        "uploaded,parent")
     def upload(self, uploaded, parent=None, ignore=None):
         """Upload the given file/directory to a remote directory.
         In case a file already exists on the server, upload will be skipped
@@ -1041,8 +1044,8 @@ class BoxApi(object):
             elif os.path.isdir(uploaded):
                 self._upload_dir(uploaded, parent, ignore)
             else:
-                logger.warn(u"ignore to upload {}" \
-                        "(neither a file nor a folder)".format(uploaded))
+                logger.warn(u"ignore to upload {}"
+                            "(neither a file nor a folder)".format(uploaded))
         except (IOError, OSError) as e:
             logger.warn(u"ignore to upload {}({})".format(uploaded, e))
 
@@ -1070,8 +1073,8 @@ class BoxApi(object):
             if name == filename:
                 logger.debug(u"found same filename: {}".format(name))
                 if f['type'] == 'folder':
-                    logger.error(u"A folder named '{}' already exists on" \
-                            " the server".format(name))
+                    logger.error(u"A folder named '{}' already exists on"
+                                 " the server".format(name))
                     raise FileConflictionError()
                 sha1 = f['sha1']
                 if get_sha1(filepath) == sha1:
@@ -1081,7 +1084,7 @@ class BoxApi(object):
                     logger.debug("diff sha1")
                     return f['id']
         logger.debug(u"file {} not found under the directory {}"
-                .format(filename, parent))
+                     .format(filename, parent))
 
     def _upload_file(self, upload_file, parent, ignore, remote_id):
         if self._ignore_path(ignore, upload_file):
@@ -1099,7 +1102,7 @@ class BoxApi(object):
         self._job_queue.add_task(self._do_upload, upload_file, parent, url)
 
     @retry((urllib2.URLError, socket.error), forgive_request,
-            tries=10, logger=logger)
+           tries=10, logger=logger)
     def _do_upload(self, upload_file, parent, url):
         logger.info(u"uploading {} to {}".format(upload_file, parent))
 
@@ -1122,7 +1125,7 @@ class BoxApi(object):
                         length = int(headers['Content-Length']) - len(data)
                         filename = os.path.basename(filename)
                         data = BoxApi.FILENAME_PATTERN.sub(
-                                "\g<1>" + filename + "\\3", data)
+                            "\g<1>" + filename + "\\3", data)
                         headers['Content-Length'] = str(length + len(data))
                         header_data.insert(0, data)
                         break
@@ -1148,15 +1151,15 @@ class BoxApi(object):
         """Compare files/directories between server and client(as per SHA1)"""
         if not os.path.exists(localpath):
             raise ValueError(
-                    u"local file '{}' doesn't exist".format(localpath))
+                u"local file '{}' doesn't exist".format(localpath))
         elif os.path.isdir(localpath):
             return self._compare_dir(localpath, remotefile, ignore,
-                    ignore_flags or (True, True))
+                                     ignore_flags or (True, True))
         elif os.path.isfile(localpath):
             return self._compare_file(localpath, remotefile)
         else:
-            raise ValueError(u"local path '{}' is neither a folder or " \
-                    "a regular file".format(localpath))
+            raise ValueError(u"local path '{}' is neither a folder or "
+                             "a regular file".format(localpath))
 
     def _compare_file(self, localfile, remotefile):
         """Compare files between server and client(as per SHA1)"""
@@ -1164,22 +1167,23 @@ class BoxApi(object):
         return get_sha1(localfile) == remote_sha1
 
     def _compare_dir(self, localdir, remotedir, ignore, ignore_flags,
-            ignore_common=True):
+                     ignore_common=True):
         """Compare directories between server and client"""
         remotedir = self.get_folder_info(remotedir)
         localdir = os.path.normpath(localdir)
-        return self._do_compare_dir(localdir, remotedir, ignore, ignore_flags,
-                DiffResult(localdir, remotedir[0], ignore_common))
+        return self._do_compare_dir(
+            localdir, remotedir, ignore, ignore_flags,
+            DiffResult(localdir, remotedir[0], ignore_common))
 
     def _do_compare_dir(self, localdir, remotedir, ignore, ignore_flags,
-            result):
+                        result):
         children = [entry for entries in
-                (i['item_collection']['entries'] for i in remotedir)
-                for entry in entries]
-        server_file_map = dict((f['name'], f) \
-                            for f in children if 'sha1' in f)
-        server_folder_map = dict((f['name'], f) \
-                            for f in children if 'sha1' not in f)
+                    (i['item_collection']['entries'] for i in remotedir)
+                    for entry in entries]
+        server_file_map = dict((f['name'], f)
+                               for f in children if 'sha1' in f)
+        server_folder_map = dict((f['name'], f)
+                                 for f in children if 'sha1' not in f)
         ignore_remote, ignore_local = ignore_flags
         if ignore_remote and ignore:
             for name, _ in server_file_map.items():
@@ -1206,8 +1210,8 @@ class BoxApi(object):
                 if node is None:
                     result_item.add_client_unique(True, path)
                 else:
-                    result_item.add_compare(
-                            get_sha1(path) != node['sha1'], path, node)
+                    result_item.add_compare(get_sha1(path) != node['sha1'],
+                                            path, node)
             elif os.path.isdir(path):
                 folder_node = server_folder_map.pop(filename, None)
                 if folder_node is None:
@@ -1215,8 +1219,8 @@ class BoxApi(object):
                 else:
                     subfolders.append(folder_node)
             else:
-                logger.warn(u"ignore the path {}" \
-                        "(neither a file nor a folder)".format(path))
+                logger.warn(u"ignore the path {}"
+                            "(neither a file nor a folder)".format(path))
         result_item.add_server_unique(True, server_file_map)
         result_item.add_server_unique(False, server_folder_map)
         # compare recursively
@@ -1249,7 +1253,7 @@ class BoxApi(object):
                 yield path, remote_node['id']
             else:
                 yield os.path.join(localdir, path), remote_node['id'], \
-                        context_node['id']
+                    context_node['id']
 
     def _delete_remote(self, dry_run, is_file, path, id_):
         logger.info(u"removing the remote {} '{}'(id={})".format(
@@ -1285,8 +1289,8 @@ class BoxApi(object):
         if is_file and is_file is not True:
             remote_id = is_file
         if remote_id:
-            logger.info(u"uploading a new version of the file '{}'(id={}," \
-                    "parent id={})".format(path, remote_id, parent))
+            logger.info(u"uploading a new version of the file '{}'(id={},"
+                        "parent id={})".format(path, remote_id, parent))
         else:
             logger.info(u"uploading a new {} '{}'(parent id={})".format(
                 "file" if is_file else "folder", path, parent))
@@ -1294,7 +1298,7 @@ class BoxApi(object):
             self._upload(path, parent, ignore=ignore, remote_id=remote_id)
 
     def _download_path(self, dry_run, is_file, path, id_, localdir,
-            is_new, ignore, verbose):
+                       is_new, ignore, verbose):
         if self._ignore_path(ignore, path):
             logger.info(u"skip downloading {}: {}".format(
                 "file" if is_file else "folder", path))
@@ -1311,13 +1315,13 @@ class BoxApi(object):
                 self._download_dir((id_, path), localdir, ignore, verbose)
 
     def push(self, localdir, remotedir, dry_run=False, delete=False,
-            ignore=None, del_exclude=False):
+             ignore=None, del_exclude=False):
         """Sync directories between client(source) and server(destination)"""
         if dry_run:
             logger.info("push dry run...")
         localdir = localdir or "."
         result = self._compare_dir(localdir, remotedir, ignore,
-                ignore_flags=(not del_exclude, True))
+                                   ignore_flags=(not del_exclude, True))
 
         if delete:
             for is_file, path, id_ in self._server_only_files(result):
@@ -1332,13 +1336,13 @@ class BoxApi(object):
                 self._upload_path(dry_run, id_, path, parent, ignore)
 
     def pull(self, remotedir, localdir, dry_run=False, delete=False,
-            ignore=None, del_exclude=False, verbose=False):
+             ignore=None, del_exclude=False, verbose=False):
         """Sync directories between server(source) and client(destination)"""
         if dry_run:
             logger.info("pull dry run...")
         localdir = localdir or "."
         result = self._compare_dir(localdir, remotedir, ignore,
-                ignore_flags=(True, not del_exclude))
+                                   ignore_flags=(True, not del_exclude))
 
         if delete:
             for is_file, path, _ in self._client_only_files(result, localdir):
@@ -1347,8 +1351,8 @@ class BoxApi(object):
         with threaded(self._job_queue):
             for is_file, path, id_ in self._server_only_files(result):
                 self._download_path(dry_run, is_file, path, id_, localdir,
-                        True, ignore, verbose)
+                                    True, ignore, verbose)
 
             for path, id_ in self._diff_files(result, None):
                 self._download_path(dry_run, True, path, id_, localdir,
-                        False, ignore, verbose)
+                                    False, ignore, verbose)

@@ -1,3 +1,5 @@
 TODO
 tmp
 *.pyc
+*.sublime-project
+*.sublime-workspace
