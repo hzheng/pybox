@@ -88,7 +88,7 @@ def parse_args(argv):
     if options.from_file:
         with open(options.from_file) as f:
             args = [arg.strip() for arg in f.readlines()]
-    return (parser, options, decode_args(args, options))
+    return parser, options, decode_args(args, options)
 
 
 def init_client(options):
@@ -233,7 +233,7 @@ def get_action(client, parser, options, args):
     else:
         parser.error("too few options")
 
-    return (action, args, extra_args)
+    return action, args, extra_args
 
 
 def main(argv=None):

@@ -148,7 +148,7 @@ class DiffResult(object):
     def get_client_unique(self, is_file):
         for item in self.items:
             for path in item.get_client_unique(is_file):
-                yield (path, item.context_node)
+                yield path, item.context_node
 
     def get_server_unique(self, is_file):
         for item in self.items:
@@ -159,7 +159,7 @@ class DiffResult(object):
     def get_compare(self, is_file):
         for item in self.items:
             for localpath, remotenode in item.get_compare(is_file):
-                yield (localpath, remotenode, item.context_node)
+                yield localpath, remotenode, item.context_node
 
     def report(self):
         result = ([], [], [], [], [], [])

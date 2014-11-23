@@ -66,7 +66,7 @@ def encode(unicode_str):
 
 def print_unicode(unicode_str):
     """Print the given unicode string as stdin's encoding"""
-    print encode(unicode_str)
+    print(encode(unicode_str))
 
 
 def get_logger():
@@ -217,7 +217,7 @@ def retry(forgivable_exceptions, forgive=lambda x: True,
                     if logger:
                         logger.warn(msg)
                     else:
-                        print msg
+                        print(msg)
                     time.sleep(mdelay)
                     mtries -= 1
                     mdelay *= backoff
