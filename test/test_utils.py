@@ -14,7 +14,7 @@ def test_get_sha1(tmpdir):
         ("1234567890\n", "12039d6dd9a7e27622301e935b6eefc78846802e"),
         ("abc", "a9993e364706816aba3e25717850c26c9cd0d89d"),
     ]
-    for (text, hash) in text_hash_pairs:
+    for text, hash in text_hash_pairs:
         f = tmpdir.join("tmp.txt")
         f.write(text)
         assert get_sha1(str(f)) == hash

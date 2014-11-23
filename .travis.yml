@@ -3,8 +3,11 @@ language: python
 python:
   - "2.7"
 
-install: "pip install -r requirements.txt"
+install:
+  - pip install -r requirements.txt
+
+before_script:
+  - export PYTHONPATH=$PYTHONPATH:$(pwd)
 
 script:
-  - export PYTHONPATH=$PYTHONPATH:$(pwd)
   - py.test test
