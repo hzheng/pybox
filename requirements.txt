@@ -1,0 +1,2 @@
+mechanize==0.2.5
+poster==0.8.1

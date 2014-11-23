@@ -22,18 +22,18 @@ import StringIO
 from contextlib import contextmanager
 from Queue import Queue
 from threading import Thread
-
 import ConfigParser
 import cookielib
 import hashlib
 import logging
 import logging.config
-import mechanize
 import xml.etree.ElementTree
 try:
     import xml.etree.cElementTree as etree
 except ImportError:
     import xml.etree.ElementTree as etree
+
+import mechanize
 
 ENCODING = sys.stdin.encoding or "UTF-8"
 
