@@ -1,6 +1,7 @@
 TODO
 tmp
 build
+dist
 
 *.pyc
 *.egg-info

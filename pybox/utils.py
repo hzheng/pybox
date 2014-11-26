@@ -106,9 +106,9 @@ def stringify(obj):
 def map_element(element):
     """Convert an XML element to a map"""
     # if sys.version_info >= (2, 7):
-        # return {e.tag: e.text.strip() for e in list(element)}
+    #     return {e.tag: e.text.strip() for e in list(element)}
     # return dict((e.tag, e.text and e.text.strip() or "")
-            # for e in list(element))
+    #         for e in list(element))
     return dict((e.tag, e.text) for e in list(element))
 
 

@@ -152,7 +152,7 @@ class DiffResult(object):
 
     def get_server_unique(self, is_file):
         for item in self.items:
-            #yield iter(item.get_server_unique(is_file)).next()
+            # yield iter(item.get_server_unique(is_file)).next()
             for i in item.get_server_unique(is_file):
                 yield i
 
@@ -311,8 +311,8 @@ class BoxApi(object):
             elif err == 400:  # bad request
                 return RequestError()
         elif isinstance(e, urllib2.URLError):
-            #if isinstance(e.reason, socket.timeout):
-                #return True
+            # if isinstance(e.reason, socket.timeout):
+            #    return True
             if isinstance(e.reason, socket.error):
                 return True
             else:
@@ -508,7 +508,7 @@ class BoxApi(object):
     @retry(StatusError, forgive_request, tries=10, logger=logger)
     def update_auth_token(self):
         """Update access token"""
-        #FIXME: may get invalid_grant(Refresh token has expired) error
+        # FIXME: may get invalid_grant(Refresh token has expired) error
         #       and retry doesn't work(Box's bug? The refresh token is supposed
         #       to be valid in 60 days. Oddly, it is Ok within the next run)
         logger.info("updating tokens")
@@ -529,7 +529,7 @@ class BoxApi(object):
 
         Refer: http://developers.box.com/docs/#folders-retrieve-a-folders-items
         """
-        ### TODO: if list item count > 1000, auto-paginate when necessary
+        # TODO: if list item count > 1000, auto-paginate when necessary
         self._check()
 
         if not folder_id or folder_id == '/':
@@ -540,7 +540,7 @@ class BoxApi(object):
         limit = extra_params.get('limit', self.LIST_SIZE)
         offset = extra_params.get('offset', 0)
         fields = extra_params.get('fields', '')
-        #fields = extra_params.get('fields', 'created_at,modified_at')
+        # fields = extra_params.get('fields', 'created_at,modified_at')
         try:
             limit = int(limit)
             offset = int(offset)
@@ -944,7 +944,7 @@ class BoxApi(object):
         logger.info(u"downloading the folder '{}'(id={}) to {}".format(
             folder_name, folder_id, localdir))
         files = (entry for entries in
-                (i['item_collection']['entries'] for i in folder_info)
+                 (i['item_collection']['entries'] for i in folder_info)
                  for entry in entries)
         for f in files:
             file_type, file_id, file_name = f['type'], f['id'], f['name']

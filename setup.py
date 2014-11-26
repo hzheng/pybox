@@ -33,7 +33,6 @@ class PyTest(TestCommand):
 
     def run_tests(self):
         import pytest
-        print self.pytest_args
         errno = pytest.main(self.pytest_args)
         sys.exit(errno)
 
