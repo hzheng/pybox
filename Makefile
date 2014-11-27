@@ -38,7 +38,7 @@ test-xml:
 	@mkdir -p $(BUILD_DIR)
 	@python setup.py test -v -r xml
 
-sonar: test-report
+sonar: test-xml
 	@sonar-runner
 
 build:
