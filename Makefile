@@ -3,6 +3,9 @@ PROJECT_NAME :=	$(notdir $(patsubst %/, %, $(PROJECT_HOME)))
 
 BUILD_DIR := build
 DIST_DIR := dist
+TEST_DIR := tests
+TEST_FILES := $(wildcard $(TEST_DIR)/*.py)
+TEST_TARGETS := $(TEST_FILES:$(TEST_DIR)/%.py=%)
 BASIC_CHECKS := pep8 pyflakes
 ALL_CHECKS := $(BASIC_CHECKS) pylint pychecker
 
@@ -23,10 +26,15 @@ check: $(BASIC_CHECKS)
 
 check-all: $(ALL_CHECKS)
 
-test:
-	@python setup.py test
+$(TEST_TARGETS): % : $(TEST_DIR)/%.py
+	py.test -s $<
 
-test-report:
+test: $(TEST_TARGETS)
+
+test-term:
+	@python setup.py -v test -r term
+
+test-xml:
 	@mkdir -p $(BUILD_DIR)
 	@python setup.py test -v -r xml
 
@@ -48,5 +56,5 @@ clean:
 distclean: clean
 	@rm -rf $(DIST_DIR)
 
-.PHONY: all $(ALL_CHECKS) check check-all test test-report sonar \
-	build install-dev install clean distclean
+.PHONY: all $(TEST_TARGETS) $(ALL_CHECKS) check check-all test test-term \
+	test-xml sonar build install-dev install clean distclean
