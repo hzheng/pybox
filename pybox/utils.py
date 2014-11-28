@@ -4,13 +4,6 @@
 Some useful utilities.
 """
 
-__author__ = "Hui Zheng"
-__copyright__ = "Copyright 2011-2012 Hui Zheng"
-__credits__ = ["Hui Zheng"]
-__license__ = "MIT <http://www.opensource.org/licenses/mit-license.php>"
-__version__ = "0.1"
-__email__ = "xyzdll[AT]gmail[DOT]com"
-
 import inspect
 import os
 import sys

@@ -44,10 +44,10 @@ sonar: test-xml
 build:
 	@python setup.py build
 
-install-dev: check test
+install-dev:
 	@python setup.py develop
 
-install: check test
+install:
 	@python setup.py install
 
 clean:

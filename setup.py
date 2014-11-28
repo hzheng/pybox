@@ -1,12 +1,17 @@
 import sys
-import os.path as path
+import importlib
+# import os.path as path
 
 from setuptools import setup, find_packages
 from setuptools.command.test import test as TestCommand
 
-PROJECT_NAME = path.basename(path.dirname(path.realpath(__file__)))
-PROJECT_VERSION = "0.1"
 PACKAGES = find_packages()
+# PROJECT_NAME = path.basename(path.dirname(path.realpath(__file__)))
+main_module = importlib.import_module(PACKAGES[0])
+try:
+    PROJECT_NAME = main_module.__app_name__
+except AttributeError:
+    PROJECT_NAME = PACKAGES[0]
 
 
 class PyTest(TestCommand):
@@ -38,20 +43,21 @@ class PyTest(TestCommand):
 
 
 with open('requirements.txt') as f:
-    requires = f.read().splitlines()
+    REQUIRES = f.read().splitlines()
 
 setup(name=PROJECT_NAME,
-      version=PROJECT_VERSION,
+      version=main_module.__version__,
+      author=main_module.__author__,
+      author_email=main_module.__email__,
+      maintainer=main_module.__maintainer__,
+      url=main_module.__url__,
+      description=main_module.__description__,
+      license=main_module.__license__,
+
       packages=PACKAGES,
-
-      install_requires=requires,
-
+      install_requires=REQUIRES,
       tests_require=[
           'pytest',
           'pytest-cov',
       ],
-      cmdclass={'test': PyTest},
-
-      author='Hui Zheng',
-      description='a Python API/client that manipulates files on box.com'
-      )
+      cmdclass={'test': PyTest})
