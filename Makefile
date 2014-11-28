@@ -27,7 +27,7 @@ check: $(BASIC_CHECKS)
 check-all: $(ALL_CHECKS)
 
 $(TEST_TARGETS): % : $(TEST_DIR)/%.py
-	py.test -s $<
+	@py.test -svv $<
 
 test: $(TEST_TARGETS)
 
@@ -56,5 +56,9 @@ clean:
 distclean: clean
 	@rm -rf $(DIST_DIR)
 
+realclean: distclean
+	@find . -name __pycache__ |xargs rm -rf
+	@find . -name \*.pyc | xargs rm -f
+
 .PHONY: all $(TEST_TARGETS) $(ALL_CHECKS) check check-all test test-term \
-	test-xml sonar build install-dev install clean distclean
+	test-xml sonar build install-dev install clean distclean realclean
