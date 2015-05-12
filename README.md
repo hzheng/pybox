@@ -21,7 +21,7 @@ Please take the following steps:
 (e.g. Unix, Linux, Mac OS X) or \_boxrc in a non-POSIX system(e.g. Windows).
 
 3. Edit .boxrc/\_boxrc: fill out client\_id and client\_secret with the values
-   you've just got in step 1.
+   you've just got in step 1. Make sure redirect\_uri is accessible.
 
 4. Copy box-logging.conf.example to box-logging.conf.
 

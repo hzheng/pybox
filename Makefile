@@ -32,7 +32,7 @@ $(TEST_TARGETS): % : $(TEST_DIR)/%.py
 test: $(TEST_TARGETS)
 
 test-term:
-	@python setup.py -v test -r term
+	@python setup.py test -v -r term
 
 test-xml:
 	@mkdir -p $(BUILD_DIR)

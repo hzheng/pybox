@@ -194,7 +194,7 @@ class BoxApi(object):
     BOX_URL = "box.com/2.0/"
     BOX_API_URL = "api." + BOX_URL
     BASE_URL = "https://" + BOX_API_URL
-    OAUTH_URL = "https://www.box.com/api/oauth2/"
+    OAUTH_URL = "https://app.box.com/api/oauth2/"
     TOKEN_URL = OAUTH_URL + "token"
     AUTH_URL = OAUTH_URL + "authorize"
     UPLOAD_URL = "https://upload.box.com/api/2.0/files{}/content"
@@ -369,6 +369,7 @@ class BoxApi(object):
     @classmethod
     def _automate(cls, url, login, password):
         browser = get_browser(True)
+
         browser.open(url)  # suppress output?
 
         browser.select_form(name='login_form')
